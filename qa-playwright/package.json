@@ -1,0 +1,22 @@
+{
+  "name": "passress-e2e-qa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end QA suite for the live Passress Shopify storefront",
+  "scripts": {
+    "test": "playwright test",
+    "test:desktop": "playwright test --project=Desktop",
+    "test:tablet": "playwright test --project=Tablet",
+    "test:mobile": "playwright test --project=Mobile",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.1",
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^26.1.1",
+    "dotenv": "^16.4.5",
+    "typescript": "^7.0.2"
+  }
+}
