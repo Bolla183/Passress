@@ -1,6 +1,6 @@
 // Product data — swap `images` entries for real product photos
 // (each color key maps to its own image).
-const PRODUCTS = [
+export const PRODUCTS = [
   {
     id: 1,
     title: "Blazer with linen rolled-up sleeves",
@@ -51,13 +51,13 @@ const PRODUCTS = [
   },
 ];
 
-const grid = document.getElementById("product-grid");
-const cartCount = document.getElementById("cart-count");
-let itemsInCart = 0;
-
-function renderCard(product) {
+// Builds one product card. No listeners are attached here — click handling
+// is delegated once on the grid (see initApp) so cost stays O(1) in the
+// number of products instead of O(n) event listeners.
+export function renderCard(product) {
   const card = document.createElement("article");
   card.className = "product-card";
+  card.dataset.images = JSON.stringify(product.images);
 
   const swatches = product.colors
     .map(
@@ -87,28 +87,54 @@ function renderCard(product) {
       <div class="swatches">${swatches}</div>
     </div>`;
 
-  const img = card.querySelector("img");
-
-  card.querySelectorAll(".swatch").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      card.querySelector(".swatch.selected")?.classList.remove("selected");
-      btn.classList.add("selected");
-      img.src = product.images[Number(btn.dataset.index)];
-    });
-  });
-
-  card.querySelector(".add-btn").addEventListener("click", () => {
-    itemsInCart += 1;
-    cartCount.textContent = itemsInCart;
-  });
-
   return card;
 }
 
-PRODUCTS.forEach((p) => grid.appendChild(renderCard(p)));
+// Renders all product cards into `grid` in a single reflow via a
+// DocumentFragment, instead of one reflow per appendChild call.
+export function renderProducts(grid, products = PRODUCTS) {
+  const fragment = document.createDocumentFragment();
+  products.forEach((product) => fragment.appendChild(renderCard(product)));
+  grid.appendChild(fragment);
+}
 
-// View toggle: 2-column grid <-> single column
-document.querySelector(".view-toggle").addEventListener("click", () => {
-  grid.classList.toggle("cols-1");
-  grid.classList.toggle("cols-2");
-});
+export function initApp(doc = document) {
+  const grid = doc.getElementById("product-grid");
+  const cartCount = doc.getElementById("cart-count");
+  const viewToggle = doc.querySelector(".view-toggle");
+
+  if (!grid || !cartCount) return;
+
+  let itemsInCart = 0;
+
+  renderProducts(grid);
+
+  // Single delegated listener handles swatch swaps and add-to-bag clicks
+  // for every card, present and future, instead of per-button listeners.
+  grid.addEventListener("click", (event) => {
+    const swatch = event.target.closest(".swatch");
+    if (swatch) {
+      const card = swatch.closest(".product-card");
+      card.querySelector(".swatch.selected")?.classList.remove("selected");
+      swatch.classList.add("selected");
+      const images = JSON.parse(card.dataset.images);
+      card.querySelector("img").src = images[Number(swatch.dataset.index)];
+      return;
+    }
+
+    const addBtn = event.target.closest(".add-btn");
+    if (addBtn) {
+      itemsInCart += 1;
+      cartCount.textContent = itemsInCart;
+    }
+  });
+
+  viewToggle?.addEventListener("click", () => {
+    grid.classList.toggle("cols-1");
+    grid.classList.toggle("cols-2");
+  });
+}
+
+// Auto-run in the browser; no-op if the expected DOM isn't present
+// (e.g. when this module is imported in a test before the DOM is set up).
+initApp();
