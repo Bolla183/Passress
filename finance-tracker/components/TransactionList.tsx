@@ -10,7 +10,7 @@ export type TransactionListItem = {
   amount: number;
   note: string | null;
   date: string;
-  source: "MANUAL" | "SHOPIFY";
+  source: string;
 };
 
 export default function TransactionList({

@@ -8,6 +8,8 @@ const TABS = [
   { href: "/dashboard/daily", label: "Daily" },
   { href: "/dashboard/monthly", label: "Monthly" },
   { href: "/dashboard/trends", label: "Trends" },
+  { href: "/reports", label: "Reports" },
+  { href: "/data", label: "Data" },
 ];
 
 export default function BottomNav() {

@@ -1,5 +1,5 @@
-import { prisma } from "@/lib/prisma";
 import { startOfCairoMonth, endOfCairoMonth, addMonths, monthLabel } from "@/lib/dates";
+import { listSimpleEntries } from "@/lib/accounting/quickEntry";
 import TrendLineChart from "@/components/TrendLineChart";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +11,7 @@ export default async function TrendsDashboard() {
   const rangeStart = startOfCairoMonth(addMonths(now, -MONTHS_BACK));
   const rangeEnd = endOfCairoMonth(now);
 
-  const transactions = await prisma.transaction.findMany({
-    where: { date: { gte: rangeStart, lt: rangeEnd } },
-  });
+  const transactions = await listSimpleEntries({ from: rangeStart, to: rangeEnd });
 
   const months: { start: Date; end: Date; label: string }[] = [];
   for (let i = MONTHS_BACK; i >= 0; i -= 1) {
@@ -29,10 +27,10 @@ export default async function TrendsDashboard() {
     const inRange = transactions.filter((t) => t.date >= start && t.date < end);
     const income = inRange
       .filter((t) => t.type === "INCOME")
-      .reduce((s, t) => s + Number(t.amount), 0);
+      .reduce((s, t) => s + t.amount, 0);
     const expense = inRange
       .filter((t) => t.type === "EXPENSE")
-      .reduce((s, t) => s + Number(t.amount), 0);
+      .reduce((s, t) => s + t.amount, 0);
     return { month: label, income, expense, net: income - expense };
   });
 

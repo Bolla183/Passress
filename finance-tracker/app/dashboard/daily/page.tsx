@@ -1,5 +1,5 @@
-import { prisma } from "@/lib/prisma";
 import { startOfCairoDay, endOfCairoDay } from "@/lib/dates";
+import { listSimpleEntries } from "@/lib/accounting/quickEntry";
 import SummaryCards from "@/components/SummaryCards";
 import TransactionList from "@/components/TransactionList";
 import SyncButton from "@/components/SyncButton";
@@ -11,17 +11,14 @@ export default async function DailyDashboard() {
   const start = startOfCairoDay(now);
   const end = endOfCairoDay(now);
 
-  const transactions = await prisma.transaction.findMany({
-    where: { date: { gte: start, lt: end } },
-    orderBy: { date: "desc" },
-  });
+  const transactions = await listSimpleEntries({ from: start, to: end });
 
   const income = transactions
     .filter((t) => t.type === "INCOME")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .reduce((sum, t) => sum + t.amount, 0);
   const expense = transactions
     .filter((t) => t.type === "EXPENSE")
-    .reduce((sum, t) => sum + Number(t.amount), 0);
+    .reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="mx-auto max-w-lg px-6 pt-10">
@@ -36,7 +33,6 @@ export default async function DailyDashboard() {
       <TransactionList
         transactions={transactions.map((t) => ({
           ...t,
-          amount: Number(t.amount),
           date: t.date.toISOString(),
         }))}
       />

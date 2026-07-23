@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { categoriesFor } from "@/lib/categories";
 import { parseDateInputValue } from "@/lib/dates";
+import { postQuickEntry, listSimpleEntries } from "@/lib/accounting/quickEntry";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -24,20 +24,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   }
 
-  const transaction = await prisma.transaction.create({
-    data: {
-      type,
-      category,
-      amount: numericAmount,
-      date: parseDateInputValue(date),
-      note: typeof note === "string" && note.trim() ? note.trim().slice(0, 200) : null,
-    },
+  const transaction = await postQuickEntry({
+    type,
+    category,
+    amount: numericAmount,
+    date: parseDateInputValue(date),
+    note: typeof note === "string" && note.trim() ? note.trim().slice(0, 200) : undefined,
   });
 
-  return NextResponse.json(
-    { transaction: { ...transaction, amount: Number(transaction.amount) } },
-    { status: 201 }
-  );
+  return NextResponse.json({ transaction }, { status: 201 });
 }
 
 export async function GET(request: Request) {
@@ -45,21 +40,10 @@ export async function GET(request: Request) {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
-  const transactions = await prisma.transaction.findMany({
-    where: {
-      ...(from || to
-        ? {
-            date: {
-              ...(from ? { gte: new Date(from) } : {}),
-              ...(to ? { lt: new Date(to) } : {}),
-            },
-          }
-        : {}),
-    },
-    orderBy: { date: "desc" },
+  const transactions = await listSimpleEntries({
+    from: from ? new Date(from) : undefined,
+    to: to ? new Date(to) : undefined,
   });
 
-  return NextResponse.json({
-    transactions: transactions.map((t) => ({ ...t, amount: Number(t.amount) })),
-  });
+  return NextResponse.json({ transactions });
 }

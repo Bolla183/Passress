@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchAllOrders } from "@/lib/shopify";
+import { postQuickEntry } from "@/lib/accounting/quickEntry";
 
 export async function POST() {
   let orders;
@@ -17,27 +18,20 @@ export async function POST() {
   let updated = 0;
 
   for (const order of orders) {
-    const shopifyOrderId = String(order.id);
-    const existing = await prisma.transaction.findUnique({
-      where: { shopifyOrderId },
-    });
+    const reference = `shopify:${order.id}`;
+    const existing = await prisma.journalEntry.findFirst({ where: { reference } });
+    if (existing) {
+      await prisma.journalEntry.delete({ where: { id: existing.id } });
+    }
 
-    await prisma.transaction.upsert({
-      where: { shopifyOrderId },
-      create: {
-        type: "INCOME",
-        category: "Shopify Sales",
-        amount: Number(order.total_price),
-        date: new Date(order.created_at),
-        note: order.name,
-        source: "SHOPIFY",
-        shopifyOrderId,
-      },
-      update: {
-        amount: Number(order.total_price),
-        date: new Date(order.created_at),
-        note: order.name,
-      },
+    await postQuickEntry({
+      type: "INCOME",
+      category: "Shopify Sales",
+      amount: Number(order.total_price),
+      date: new Date(order.created_at),
+      note: order.name,
+      source: "SHOPIFY",
+      reference,
     });
 
     if (existing) updated += 1;
