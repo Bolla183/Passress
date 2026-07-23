@@ -46,6 +46,21 @@ fully wired as the reusable pattern the remaining 16 follow.
   in the database and have a service layer, with their screens next in line.
 - **Shopify sync**: same "Sync Shopify" button, now posting a journal entry
   (Debit Cash, Credit Shopify Sales) per order instead of a flat row.
+- **Workflows** (`/workflows`): business processes that post through the same
+  ledger, sharing master data instead of free text:
+  - **Bills** (AP) and **Invoices** (AR): record what's owed, track partial
+    payments, post the correct entry on both creation and settlement.
+  - **Payroll**: one-click salary payment per employee (Debit Salaries,
+    Credit bank).
+  - **Loans**: disbursement and repayment, splitting each repayment into
+    principal and interest automatically.
+  - **Inventory**: Purchase (Debit Inventory / Credit AP-or-Cash, reusing
+    Bills for payment tracking), Sale (one balanced four-line entry — COGS
+    against Inventory at cost, and Cash/Bank/AR against Revenue at price —
+    with stock-level validation so you can't sell more than you have), and
+    Manufacture (moves cost from Raw Material to Finished Good inventory when
+    turning fabric into a finished piece). Stock levels and recent movements
+    are visible per product/warehouse.
 - **Auth**: unchanged — single shared password, signed session cookie.
 
 ## Local development

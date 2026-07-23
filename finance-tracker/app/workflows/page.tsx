@@ -5,6 +5,7 @@ const WORKFLOWS = [
   { href: "/workflows/invoices", label: "Invoices (Accounts Receivable)" },
   { href: "/workflows/payroll", label: "Payroll" },
   { href: "/workflows/loans", label: "Loans" },
+  { href: "/workflows/inventory", label: "Inventory" },
 ];
 
 export default function WorkflowsIndex() {
