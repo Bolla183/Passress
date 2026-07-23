@@ -10,6 +10,7 @@ const TABS = [
   { href: "/dashboard/trends", label: "Trends" },
   { href: "/reports", label: "Reports" },
   { href: "/data", label: "Data" },
+  { href: "/workflows", label: "Workflows" },
 ];
 
 export default function BottomNav() {
@@ -25,14 +26,14 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 border-t border-hairline bg-paper">
-      <div className="mx-auto flex max-w-lg">
+      <div className="mx-auto flex max-w-lg overflow-x-auto">
         {TABS.map((tab) => {
           const active = pathname.startsWith(tab.href);
           return (
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex-1 py-3 text-center text-[11px] uppercase tracking-widest ${
+              className={`shrink-0 basis-1/6 px-2 py-3 text-center text-[11px] uppercase tracking-widest ${
                 active ? "text-ink font-medium" : "text-muted"
               }`}
             >
@@ -42,7 +43,7 @@ export default function BottomNav() {
         })}
         <button
           onClick={handleLogout}
-          className="flex-1 py-3 text-center text-[11px] uppercase tracking-widest text-muted"
+          className="shrink-0 basis-1/6 px-2 py-3 text-center text-[11px] uppercase tracking-widest text-muted"
         >
           Logout
         </button>

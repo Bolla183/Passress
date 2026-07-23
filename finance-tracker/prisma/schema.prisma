@@ -37,6 +37,12 @@ model Company {
   projects           Project[]
   budgets            Budget[]
   taxRates           TaxRate[]
+  bills              Bill[]
+  billPayments       BillPayment[]
+  invoices           Invoice[]
+  invoicePayments    InvoicePayment[]
+  salaryPayments     SalaryPayment[]
+  loanPayments       LoanPayment[]
 }
 
 // ───────────────────────── Legacy (kept for migration/audit) ─────────────────────────
@@ -83,23 +89,23 @@ enum NormalBalance {
 }
 
 model Account {
-  id            String        @id @default(cuid())
-  companyId     String
-  company       Company       @relation(fields: [companyId], references: [id])
-  code          String
-  name          String
-  type          AccountType
-  subtype       String?
-  normalBalance NormalBalance
-  showInQuickAdd Boolean      @default(false)
-  parentId      String?
-  parent        Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children      Account[]     @relation("AccountHierarchy")
-  isActive      Boolean       @default(true)
-  createdBy     String?
-  createdAt     DateTime      @default(now())
-  updatedBy     String?
-  updatedAt     DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  code           String
+  name           String
+  type           AccountType
+  subtype        String?
+  normalBalance  NormalBalance
+  showInQuickAdd Boolean       @default(false)
+  parentId       String?
+  parent         Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children       Account[]     @relation("AccountHierarchy")
+  isActive       Boolean       @default(true)
+  createdBy      String?
+  createdAt      DateTime      @default(now())
+  updatedBy      String?
+  updatedAt      DateTime      @updatedAt
 
   journalLines JournalLine[]
   products     Product[]
@@ -107,6 +113,8 @@ model Account {
   loans        Loan[]
   fixedAssets  FixedAsset[]
   budgets      Budget[]
+  bills        Bill[]
+  invoices     Invoice[]
 
   @@unique([companyId, code])
   @@index([companyId, type])
@@ -216,7 +224,8 @@ model Employee {
   updatedBy    String?
   updatedAt    DateTime    @updatedAt
 
-  journalLines JournalLine[]
+  journalLines   JournalLine[]
+  salaryPayments SalaryPayment[]
 
   @@index([companyId, isActive])
   @@index([companyId, name])
@@ -240,6 +249,7 @@ model Supplier {
   journalLines       JournalLine[]
   fixedAssets        FixedAsset[]
   inventoryMovements InventoryMovement[]
+  bills              Bill[]
 
   @@index([companyId, isActive])
   @@index([companyId, name])
@@ -260,6 +270,7 @@ model Customer {
   updatedAt DateTime @updatedAt
 
   journalLines JournalLine[]
+  invoices     Invoice[]
 
   @@index([companyId, isActive])
   @@index([companyId, name])
@@ -387,27 +398,58 @@ model BankAccount {
   updatedBy      String?
   updatedAt      DateTime        @updatedAt
 
+  loans           Loan[]
+  loanPayments    LoanPayment[]
+  billPayments    BillPayment[]
+  invoicePayments InvoicePayment[]
+  salaryPayments  SalaryPayment[]
+
   @@index([companyId, isActive])
 }
 
 model Loan {
-  id           String   @id @default(cuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id])
-  lender       String
-  principal    Decimal  @db.Decimal(14, 2)
-  interestRate Decimal  @db.Decimal(6, 3)
-  startDate    DateTime
-  termMonths   Int
-  glAccountId  String
-  glAccount    Account  @relation(fields: [glAccountId], references: [id])
-  isActive     Boolean  @default(true)
-  createdBy    String?
-  createdAt    DateTime @default(now())
-  updatedBy    String?
-  updatedAt    DateTime @updatedAt
+  id                         String       @id @default(cuid())
+  companyId                  String
+  company                    Company      @relation(fields: [companyId], references: [id])
+  lender                     String
+  principal                  Decimal      @db.Decimal(14, 2)
+  interestRate               Decimal      @db.Decimal(6, 3)
+  startDate                  DateTime
+  termMonths                 Int
+  glAccountId                String
+  glAccount                  Account      @relation(fields: [glAccountId], references: [id])
+  bankAccountId              String?
+  bankAccount                BankAccount? @relation(fields: [bankAccountId], references: [id])
+  disbursementJournalEntryId String?
+  remainingPrincipal         Decimal?     @db.Decimal(14, 2)
+  isActive                   Boolean      @default(true)
+  createdBy                  String?
+  createdAt                  DateTime     @default(now())
+  updatedBy                  String?
+  updatedAt                  DateTime     @updatedAt
+
+  payments LoanPayment[]
 
   @@index([companyId, isActive])
+}
+
+model LoanPayment {
+  id              String      @id @default(cuid())
+  companyId       String
+  company         Company     @relation(fields: [companyId], references: [id])
+  loanId          String
+  loan            Loan        @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  date            DateTime
+  principalAmount Decimal     @db.Decimal(14, 2)
+  interestAmount  Decimal     @default(0) @db.Decimal(14, 2)
+  bankAccountId   String
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id])
+  journalEntryId  String?
+  notes           String?
+  createdBy       String?
+  createdAt       DateTime    @default(now())
+
+  @@index([companyId, loanId])
 }
 
 enum DepreciationMethod {
@@ -639,4 +681,131 @@ model TaxRate {
   updatedAt   DateTime @updatedAt
 
   @@index([companyId, isActive])
+}
+
+// ───────────────────────── Accounts Payable ─────────────────────────
+
+enum BillStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+model Bill {
+  id             String     @id @default(cuid())
+  companyId      String
+  company        Company    @relation(fields: [companyId], references: [id])
+  supplierId     String
+  supplier       Supplier   @relation(fields: [supplierId], references: [id])
+  billNumber     String?
+  billDate       DateTime
+  dueDate        DateTime?
+  accountId      String
+  account        Account    @relation(fields: [accountId], references: [id])
+  amount         Decimal    @db.Decimal(14, 2)
+  amountPaid     Decimal    @default(0) @db.Decimal(14, 2)
+  status         BillStatus @default(OPEN)
+  notes          String?
+  journalEntryId String?
+  createdBy      String?
+  createdAt      DateTime   @default(now())
+  updatedBy      String?
+  updatedAt      DateTime   @updatedAt
+
+  payments BillPayment[]
+
+  @@index([companyId, status])
+  @@index([companyId, supplierId])
+}
+
+model BillPayment {
+  id             String      @id @default(cuid())
+  companyId      String
+  company        Company     @relation(fields: [companyId], references: [id])
+  billId         String
+  bill           Bill        @relation(fields: [billId], references: [id], onDelete: Cascade)
+  date           DateTime
+  amount         Decimal     @db.Decimal(14, 2)
+  bankAccountId  String
+  bankAccount    BankAccount @relation(fields: [bankAccountId], references: [id])
+  journalEntryId String?
+  createdBy      String?
+  createdAt      DateTime    @default(now())
+
+  @@index([companyId, billId])
+}
+
+// ───────────────────────── Accounts Receivable ─────────────────────────
+
+enum InvoiceStatus {
+  OPEN
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  invoiceNumber  String?
+  invoiceDate    DateTime
+  dueDate        DateTime?
+  accountId      String
+  account        Account       @relation(fields: [accountId], references: [id])
+  amount         Decimal       @db.Decimal(14, 2)
+  amountPaid     Decimal       @default(0) @db.Decimal(14, 2)
+  status         InvoiceStatus @default(OPEN)
+  notes          String?
+  journalEntryId String?
+  createdBy      String?
+  createdAt      DateTime      @default(now())
+  updatedBy      String?
+  updatedAt      DateTime      @updatedAt
+
+  payments InvoicePayment[]
+
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+}
+
+model InvoicePayment {
+  id             String      @id @default(cuid())
+  companyId      String
+  company        Company     @relation(fields: [companyId], references: [id])
+  invoiceId      String
+  invoice        Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  date           DateTime
+  amount         Decimal     @db.Decimal(14, 2)
+  bankAccountId  String
+  bankAccount    BankAccount @relation(fields: [bankAccountId], references: [id])
+  journalEntryId String?
+  createdBy      String?
+  createdAt      DateTime    @default(now())
+
+  @@index([companyId, invoiceId])
+}
+
+// ───────────────────────── Payroll ─────────────────────────
+
+model SalaryPayment {
+  id             String      @id @default(cuid())
+  companyId      String
+  company        Company     @relation(fields: [companyId], references: [id])
+  employeeId     String
+  employee       Employee    @relation(fields: [employeeId], references: [id])
+  period         String
+  amount         Decimal     @db.Decimal(14, 2)
+  date           DateTime
+  bankAccountId  String
+  bankAccount    BankAccount @relation(fields: [bankAccountId], references: [id])
+  journalEntryId String?
+  notes          String?
+  createdBy      String?
+  createdAt      DateTime    @default(now())
+
+  @@index([companyId, employeeId])
 }
