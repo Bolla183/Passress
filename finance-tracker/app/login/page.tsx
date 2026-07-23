@@ -24,7 +24,8 @@ function LoginForm() {
     setLoading(false);
 
     if (!res.ok) {
-      setError("Incorrect password");
+      const body = await res.json().catch(() => ({}));
+      setError(body.error || `Login failed (${res.status})`);
       return;
     }
 
