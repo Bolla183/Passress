@@ -47,7 +47,7 @@ function periodRange(period: PeriodId, now: Date): { from: Date; to: Date; label
 
 const TREND_MONTHS_BACK = 11;
 
-export default async function ExecutiveDashboard({
+export default async function PerformanceDashboard({
   searchParams,
 }: {
   searchParams: Promise<{ period?: string }>;
@@ -69,15 +69,17 @@ export default async function ExecutiveDashboard({
     getMonthlyTrend(months),
   ]);
 
+  const margin = summary.totalRevenue > 0 ? (summary.netProfit / summary.totalRevenue) * 100 : 0;
+
   return (
     <div className="mx-auto max-w-lg px-6 pt-10">
-      <h1 className="mb-6 text-lg tracking-widest uppercase">Executive</h1>
+      <h1 className="mb-6 text-lg tracking-widest uppercase">Performance</h1>
 
       <div className="mb-4 flex gap-4 overflow-x-auto text-xs uppercase tracking-widest">
         {PERIODS.map((p) => (
           <Link
             key={p.id}
-            href={`/dashboard/executive?period=${p.id}`}
+            href={`/dashboard/performance?period=${p.id}`}
             className={`shrink-0 pb-1 ${p.id === period ? "border-b border-ink text-ink" : "text-muted"}`}
           >
             {p.label}
@@ -91,9 +93,7 @@ export default async function ExecutiveDashboard({
           { label: "Revenue", value: summary.totalRevenue, tone: "income" },
           { label: "Expenses", value: summary.totalExpense, tone: "expense" },
           { label: "Net Profit", value: summary.netProfit, tone: summary.netProfit >= 0 ? "income" : "expense" },
-          { label: "Cash Balance", value: summary.cashBalance },
-          { label: "AR Outstanding", value: summary.arOutstanding },
-          { label: "AP Outstanding", value: summary.apOutstanding },
+          { label: "Margin", value: margin, tone: margin >= 0 ? "income" : "expense", format: "percent" },
         ]}
       />
 

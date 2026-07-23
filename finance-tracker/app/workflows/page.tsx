@@ -3,7 +3,6 @@ import Link from "next/link";
 const WORKFLOWS = [
   { href: "/workflows/bills", label: "Bills (Accounts Payable)" },
   { href: "/workflows/invoices", label: "Invoices (Accounts Receivable)" },
-  { href: "/workflows/payroll", label: "Payroll" },
   { href: "/workflows/loans", label: "Loans" },
   { href: "/workflows/inventory", label: "Inventory" },
 ];
