@@ -174,9 +174,13 @@ export default function MasterDataScreen({
                   onChange={(e) => setForm({ ...form, [field.name]: e.target.value })}
                   className="w-full border-b border-hairline bg-transparent py-2 text-sm outline-none focus:border-ink"
                 >
-                  <option value="" disabled>
-                    Select...
-                  </option>
+                  {field.required ? (
+                    <option value="" disabled>
+                      Select...
+                    </option>
+                  ) : (
+                    <option value="">None</option>
+                  )}
                   {field.options?.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}

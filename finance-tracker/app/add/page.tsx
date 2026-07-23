@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { INCOME_CATEGORIES, EXPENSE_CATEGORIES } from "@/lib/categories";
+import { useEffect, useState } from "react";
 import { dateInputValue } from "@/lib/dates";
 import { formatEGP } from "@/lib/currency";
 
 type TxType = "INCOME" | "EXPENSE";
+type QuickAddAccount = { id: string; name: string };
 
 type AddedEntry = {
   id: string;
@@ -16,8 +16,12 @@ type AddedEntry = {
 };
 
 export default function AddPage() {
+  const [accounts, setAccounts] = useState<{ income: QuickAddAccount[]; expense: QuickAddAccount[] }>({
+    income: [],
+    expense: [],
+  });
   const [type, setType] = useState<TxType>("EXPENSE");
-  const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
+  const [accountId, setAccountId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(dateInputValue(new Date()));
@@ -25,11 +29,27 @@ export default function AddPage() {
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<AddedEntry[]>([]);
 
-  const categories = type === "INCOME" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const res = await fetch("/api/accounts/quick-add");
+      const body = await res.json();
+      if (cancelled) return;
+      setAccounts(body);
+      setAccountId(body.expense[0]?.id ?? "");
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const categories = type === "INCOME" ? accounts.income : accounts.expense;
 
   function switchType(next: TxType) {
     setType(next);
-    setCategory((next === "INCOME" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES)[0]);
+    const list = next === "INCOME" ? accounts.income : accounts.expense;
+    setAccountId(list[0]?.id ?? "");
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -41,12 +61,16 @@ export default function AddPage() {
       setError("Enter a valid amount");
       return;
     }
+    if (!accountId) {
+      setError("Choose a category");
+      return;
+    }
 
     setSaving(true);
     const res = await fetch("/api/transactions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, category, amount: numericAmount, date, note }),
+      body: JSON.stringify({ accountId, amount: numericAmount, date, note }),
     });
     setSaving(false);
 
@@ -105,18 +129,23 @@ export default function AddPage() {
         <div className="mb-6 grid grid-cols-2 gap-2">
           {categories.map((c) => (
             <button
-              key={c}
+              key={c.id}
               type="button"
-              onClick={() => setCategory(c)}
+              onClick={() => setAccountId(c.id)}
               className={`border px-3 py-2 text-left text-sm ${
-                category === c
+                accountId === c.id
                   ? "border-ink bg-ink text-paper"
                   : "border-hairline text-ink"
               }`}
             >
-              {c}
+              {c.name}
             </button>
           ))}
+          {categories.length === 0 && (
+            <p className="col-span-2 text-sm text-muted">
+              No categories yet — add one in Data → Chart of Accounts.
+            </p>
+          )}
         </div>
 
         <label className="mb-4 block">

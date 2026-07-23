@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
-import { categoriesFor } from "@/lib/categories";
 import { parseDateInputValue } from "@/lib/dates";
-import { postQuickEntry, listSimpleEntries } from "@/lib/accounting/quickEntry";
+import { postQuickEntry, listSimpleEntries, getQuickAddAccounts } from "@/lib/accounting/quickEntry";
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { type, category, amount, date, note } = body ?? {};
+  const { accountId, amount, date, note } = body ?? {};
 
-  if (type !== "INCOME" && type !== "EXPENSE") {
-    return NextResponse.json({ error: "Invalid type" }, { status: 400 });
+  if (typeof accountId !== "string" || !accountId) {
+    return NextResponse.json({ error: "Invalid account" }, { status: 400 });
   }
 
-  if (typeof category !== "string" || !categoriesFor(type).includes(category)) {
-    return NextResponse.json({ error: "Invalid category" }, { status: 400 });
+  const { income, expense } = await getQuickAddAccounts();
+  const isKnownAccount = [...income, ...expense].some((a) => a.id === accountId);
+  if (!isKnownAccount) {
+    return NextResponse.json({ error: "Invalid account" }, { status: 400 });
   }
 
   const numericAmount = Number(amount);
@@ -24,15 +25,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   }
 
-  const transaction = await postQuickEntry({
-    type,
-    category,
-    amount: numericAmount,
-    date: parseDateInputValue(date),
-    note: typeof note === "string" && note.trim() ? note.trim().slice(0, 200) : undefined,
-  });
-
-  return NextResponse.json({ transaction }, { status: 201 });
+  try {
+    const transaction = await postQuickEntry({
+      accountId,
+      amount: numericAmount,
+      date: parseDateInputValue(date),
+      note: typeof note === "string" && note.trim() ? note.trim().slice(0, 200) : undefined,
+    });
+    return NextResponse.json({ transaction }, { status: 201 });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Could not save" },
+      { status: 400 }
+    );
+  }
 }
 
 export async function GET(request: Request) {

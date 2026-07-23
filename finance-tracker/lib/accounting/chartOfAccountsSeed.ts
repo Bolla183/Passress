@@ -6,12 +6,15 @@ export type AccountSeedNode = {
   type: AccountType;
   normalBalance: NormalBalance;
   subtype?: string;
+  showInQuickAdd?: boolean;
   children?: AccountSeedNode[];
 };
 
-// Leaf account codes used by the quick-add form and the legacy-transaction
-// migration — these names match the categories the founder already uses,
-// so the simple UX maps 1:1 onto specific ledger accounts.
+// Used only by the one-time legacy-transaction migration script, which maps
+// the founder's original fixed category labels onto specific accounts. Live
+// quick-add no longer uses this — it reads whichever accounts currently have
+// showInQuickAdd = true, so new categories added via the Chart of Accounts
+// screen show up with no code change.
 export const QUICK_ADD_INCOME_ACCOUNT_CODES: Record<string, string> = {
   "Shopify Sales": "4100",
   Wholesale: "4200",
@@ -162,9 +165,9 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
     type: "REVENUE",
     normalBalance: "CREDIT",
     children: [
-      { code: "4100", name: "Shopify Sales", type: "REVENUE", normalBalance: "CREDIT" },
-      { code: "4200", name: "Wholesale", type: "REVENUE", normalBalance: "CREDIT" },
-      { code: "4900", name: "Other Income", type: "REVENUE", normalBalance: "CREDIT" },
+      { code: "4100", name: "Shopify Sales", type: "REVENUE", normalBalance: "CREDIT", showInQuickAdd: true },
+      { code: "4200", name: "Wholesale", type: "REVENUE", normalBalance: "CREDIT", showInQuickAdd: true },
+      { code: "4900", name: "Other Income", type: "REVENUE", normalBalance: "CREDIT", showInQuickAdd: true },
     ],
   },
   {
@@ -173,17 +176,28 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
     type: "EXPENSE",
     normalBalance: "DEBIT",
     children: [
-      { code: "5000", name: "COGS / Inventory", type: "EXPENSE", normalBalance: "DEBIT" },
+      {
+        code: "5000",
+        name: "COGS / Inventory",
+        type: "EXPENSE",
+        normalBalance: "DEBIT",
+        showInQuickAdd: true,
+        children: [
+          { code: "5010", name: "Sample Production", type: "EXPENSE", normalBalance: "DEBIT", showInQuickAdd: true },
+        ],
+      },
       {
         code: "5100",
         name: "Marketing & Ads",
         type: "EXPENSE",
         normalBalance: "DEBIT",
+        showInQuickAdd: true,
         children: [
           { code: "5110", name: "Meta Ads", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5120", name: "Google Ads", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5130", name: "TikTok Ads", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5140", name: "Influencers", type: "EXPENSE", normalBalance: "DEBIT" },
+          { code: "5150", name: "Sample Giveaways", type: "EXPENSE", normalBalance: "DEBIT", showInQuickAdd: true },
         ],
       },
       {
@@ -191,6 +205,7 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
         name: "Shipping & Fulfillment",
         type: "EXPENSE",
         normalBalance: "DEBIT",
+        showInQuickAdd: true,
         children: [
           { code: "5210", name: "Delivery", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5220", name: "Packaging", type: "EXPENSE", normalBalance: "DEBIT" },
@@ -201,6 +216,7 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
         name: "Software & Subscriptions",
         type: "EXPENSE",
         normalBalance: "DEBIT",
+        showInQuickAdd: true,
         children: [
           { code: "5310", name: "Shopify Subscription", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5320", name: "ChatGPT", type: "EXPENSE", normalBalance: "DEBIT" },
@@ -213,6 +229,7 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
         name: "Salaries & Contractors",
         type: "EXPENSE",
         normalBalance: "DEBIT",
+        showInQuickAdd: true,
         children: [
           { code: "5410", name: "Salaries", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5420", name: "Bonuses", type: "EXPENSE", normalBalance: "DEBIT" },
@@ -224,6 +241,7 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
         name: "Rent & Utilities",
         type: "EXPENSE",
         normalBalance: "DEBIT",
+        showInQuickAdd: true,
         children: [
           { code: "5510", name: "Rent", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5520", name: "Utilities", type: "EXPENSE", normalBalance: "DEBIT" },
@@ -235,12 +253,13 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
         name: "Bank & Payment Fees",
         type: "EXPENSE",
         normalBalance: "DEBIT",
+        showInQuickAdd: true,
         children: [
           { code: "5610", name: "Bank Fees", type: "EXPENSE", normalBalance: "DEBIT" },
           { code: "5620", name: "Interest Expense", type: "EXPENSE", normalBalance: "DEBIT" },
         ],
       },
-      { code: "5900", name: "Misc", type: "EXPENSE", normalBalance: "DEBIT" },
+      { code: "5900", name: "Misc", type: "EXPENSE", normalBalance: "DEBIT", showInQuickAdd: true },
     ],
   },
 ];

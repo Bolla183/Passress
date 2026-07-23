@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fetchAllOrders } from "@/lib/shopify";
 import { postQuickEntry } from "@/lib/accounting/quickEntry";
+import { getAccountByCode } from "@/lib/accounting/ledger";
 
 export async function POST() {
   let orders;
@@ -14,6 +15,8 @@ export async function POST() {
     );
   }
 
+  const shopifySalesAccount = await getAccountByCode("4100");
+
   let created = 0;
   let updated = 0;
 
@@ -25,8 +28,7 @@ export async function POST() {
     }
 
     await postQuickEntry({
-      type: "INCOME",
-      category: "Shopify Sales",
+      accountId: shopifySalesAccount.id,
       amount: Number(order.total_price),
       date: new Date(order.created_at),
       note: order.name,

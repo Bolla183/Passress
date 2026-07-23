@@ -91,6 +91,7 @@ model Account {
   type          AccountType
   subtype       String?
   normalBalance NormalBalance
+  showInQuickAdd Boolean      @default(false)
   parentId      String?
   parent        Account?      @relation("AccountHierarchy", fields: [parentId], references: [id])
   children      Account[]     @relation("AccountHierarchy")
