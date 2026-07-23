@@ -38,6 +38,25 @@ export function addMonths(date: Date, months: number): Date {
   return new Date(utc - CAIRO_OFFSET_MS);
 }
 
+export function startOfCairoQuarter(date: Date): Date {
+  const shifted = cairoShifted(date);
+  const quarterStartMonth = Math.floor(shifted.getUTCMonth() / 3) * 3;
+  const utc = Date.UTC(shifted.getUTCFullYear(), quarterStartMonth, 1);
+  return new Date(utc - CAIRO_OFFSET_MS);
+}
+
+export function startOfCairoYear(date: Date): Date {
+  const shifted = cairoShifted(date);
+  const utc = Date.UTC(shifted.getUTCFullYear(), 0, 1);
+  return new Date(utc - CAIRO_OFFSET_MS);
+}
+
+export function quarterLabel(date: Date): string {
+  const shifted = cairoShifted(date);
+  const quarter = Math.floor(shifted.getUTCMonth() / 3) + 1;
+  return `Q${quarter} ${shifted.getUTCFullYear()}`;
+}
+
 export function monthLabel(date: Date): string {
   const shifted = cairoShifted(date);
   return shifted.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
