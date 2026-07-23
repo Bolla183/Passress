@@ -1,5 +1,6 @@
 import { prisma } from "../prisma";
 import { DEFAULT_COMPANY_ID } from "./company";
+import { getAccountByCode } from "./ledger";
 import type { Account } from "../../app/generated/prisma/client";
 
 type Activity = { debit: number; credit: number };
@@ -243,6 +244,100 @@ export async function getBalanceSheet(asOfDate: Date, companyId = DEFAULT_COMPAN
     totalEquity: equity.total + netIncome,
     netIncome,
   };
+}
+
+// A single account's rolled-up balance as of a date — the same primitive
+// the Balance Sheet uses per-row, exposed standalone for dashboards that
+// only need one account (e.g. "cash on hand" or "AR outstanding").
+export async function getAccountBalance(
+  accountId: string,
+  asOfDate: Date,
+  companyId = DEFAULT_COMPANY_ID
+): Promise<number> {
+  const accounts = await getAllAccounts(companyId);
+  const account = accounts.find((a) => a.id === accountId);
+  if (!account) return 0;
+
+  const ownActivity = await getOwnActivity(companyId, asOfDate);
+  const childrenByParent = buildChildrenMap(accounts);
+  const rolled = rollUp(accountId, ownActivity, childrenByParent);
+  return netBalance(account, rolled);
+}
+
+export type ExecutiveSummary = {
+  totalRevenue: number;
+  totalExpense: number;
+  netProfit: number;
+  cashBalance: number;
+  arOutstanding: number;
+  apOutstanding: number;
+  revenueByCategory: { category: string; amount: number }[];
+  expenseByCategory: { category: string; amount: number }[];
+};
+
+// Everything an Executive Dashboard needs, computed only from the ledger
+// (postJournalEntry / journal lines) — never from the quick-add "simple
+// entries" view, which only reconstructs plain two-line cash transactions
+// and would miss Bills, Invoices, Payroll, Loans, and Inventory postings.
+export async function getExecutiveSummary(
+  { from, to }: { from: Date; to: Date },
+  companyId = DEFAULT_COMPANY_ID
+): Promise<ExecutiveSummary> {
+  const [pnl, bankAccounts, arAccount, apAccount] = await Promise.all([
+    getProfitAndLoss({ from, to }, companyId),
+    prisma.bankAccount.findMany({ where: { companyId }, select: { glAccountId: true } }),
+    getAccountByCode("1100", companyId),
+    getAccountByCode("2000", companyId),
+  ]);
+
+  const [cashBalances, arOutstanding, apOutstanding] = await Promise.all([
+    Promise.all(bankAccounts.map((b) => getAccountBalance(b.glAccountId, to, companyId))),
+    getAccountBalance(arAccount.id, to, companyId),
+    getAccountBalance(apAccount.id, to, companyId),
+  ]);
+
+  // depth 0 is the synthetic "Revenue"/"Expenses" root the chart-of-accounts
+  // seed wraps every category in (see the "-GROUP" codes) — depth 1 is the
+  // actual category (Shopify Sales, Marketing & Ads, Payroll, ...), already
+  // rolled up to include its own children (e.g. Meta Ads under Marketing).
+  const topLevel = (rows: AccountRollupRow[]) =>
+    rows
+      .filter((r) => r.depth === 1)
+      .map((r) => ({ category: r.name, amount: r.amount }))
+      .sort((a, b) => b.amount - a.amount);
+
+  return {
+    totalRevenue: pnl.totalRevenue,
+    totalExpense: pnl.totalExpense,
+    netProfit: pnl.netProfit,
+    cashBalance: cashBalances.reduce((s, v) => s + v, 0),
+    arOutstanding,
+    apOutstanding,
+    revenueByCategory: topLevel(pnl.revenue),
+    expenseByCategory: topLevel(pnl.expense),
+  };
+}
+
+export type MonthlyTrendPoint = { month: string; income: number; expense: number; net: number };
+
+// Ledger-accurate month-by-month revenue/expense, for the Executive
+// Dashboard trend chart — reads P&L account activity directly rather than
+// the quick-add "simple entries" reconstruction the older Trends page uses.
+export async function getMonthlyTrend(
+  months: { start: Date; end: Date; label: string }[],
+  companyId = DEFAULT_COMPANY_ID
+): Promise<MonthlyTrendPoint[]> {
+  return Promise.all(
+    months.map(async ({ start, end, label }) => {
+      const pnl = await getProfitAndLoss({ from: start, to: end }, companyId);
+      return {
+        month: label,
+        income: pnl.totalRevenue,
+        expense: pnl.totalExpense,
+        net: pnl.netProfit,
+      };
+    })
+  );
 }
 
 const INVESTING_SUBTYPES = new Set(["FIXED_ASSET", "FIXED_ASSET_CONTRA"]);
