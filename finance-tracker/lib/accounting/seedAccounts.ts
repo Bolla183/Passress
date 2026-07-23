@@ -2,34 +2,65 @@ import { prisma } from "../prisma";
 import { DEFAULT_COMPANY_ID, ensureDefaultCompany } from "./company";
 import { CHART_OF_ACCOUNTS, type AccountSeedNode } from "./chartOfAccountsSeed";
 
+// Only creates missing accounts — never overwrites an existing row. The
+// seed re-runs on every deploy (alongside the founder's own edits via the
+// Chart of Accounts screen), so touching existing rows here would silently
+// revert anything they've changed.
 async function upsertAccountTree(
   node: AccountSeedNode,
   companyId: string,
   parentId: string | null
 ) {
-  const account = await prisma.account.upsert({
+  const existing = await prisma.account.findUnique({
     where: { companyId_code: { companyId, code: node.code } },
-    update: {
-      name: node.name,
-      type: node.type,
-      normalBalance: node.normalBalance,
-      subtype: node.subtype,
-      parentId,
-    },
-    create: {
-      companyId,
-      code: node.code,
-      name: node.name,
-      type: node.type,
-      normalBalance: node.normalBalance,
-      subtype: node.subtype,
-      parentId,
-    },
   });
+
+  const account =
+    existing ??
+    (await prisma.account.create({
+      data: {
+        companyId,
+        code: node.code,
+        name: node.name,
+        type: node.type,
+        normalBalance: node.normalBalance,
+        subtype: node.subtype,
+        showInQuickAdd: node.showInQuickAdd ?? false,
+        parentId,
+      },
+    }));
 
   for (const child of node.children ?? []) {
     await upsertAccountTree(child, companyId, account.id);
   }
+}
+
+function collectQuickAddCodes(nodes: AccountSeedNode[]): string[] {
+  const codes: string[] = [];
+  for (const node of nodes) {
+    if (node.showInQuickAdd) codes.push(node.code);
+    codes.push(...collectQuickAddCodes(node.children ?? []));
+  }
+  return codes;
+}
+
+// One-time backfill for the showInQuickAdd column added after accounts
+// already existed in production. Only runs if no account has ever been
+// flagged yet, so it can't clobber a founder's later edits via the Chart of
+// Accounts screen — after the first run, this is permanently a no-op.
+async function backfillQuickAddFlags(companyId: string) {
+  const alreadyBackfilled = await prisma.account.findFirst({
+    where: { companyId, showInQuickAdd: true },
+  });
+  if (alreadyBackfilled) return;
+
+  const codes = collectQuickAddCodes(CHART_OF_ACCOUNTS);
+  if (codes.length === 0) return;
+
+  await prisma.account.updateMany({
+    where: { companyId, code: { in: codes } },
+    data: { showInQuickAdd: true },
+  });
 }
 
 async function seedPaymentMethods(companyId: string) {
@@ -104,6 +135,10 @@ async function seedBankAccounts(companyId: string) {
 
 export async function seedCompanyAndAccounts() {
   const company = await ensureDefaultCompany();
+
+  // Must run before creating any new tree nodes below, so the "has this
+  // ever run before" check only sees accounts that predate this feature.
+  await backfillQuickAddFlags(company.id);
 
   for (const node of CHART_OF_ACCOUNTS) {
     await upsertAccountTree(node, company.id, null);

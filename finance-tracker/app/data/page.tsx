@@ -1,9 +1,9 @@
 import Link from "next/link";
 
 const ENTITIES = [
+  { href: "/data/chart-of-accounts", label: "Chart of Accounts", ready: true },
   { href: "/data/suppliers", label: "Suppliers", ready: true },
   { href: "/data/bank-accounts", label: "Bank Accounts", ready: true },
-  { href: "/reports/general-ledger", label: "Chart of Accounts", ready: true },
   { href: "#", label: "Employees", ready: false },
   { href: "#", label: "Customers", ready: false },
   { href: "#", label: "Products", ready: false },
