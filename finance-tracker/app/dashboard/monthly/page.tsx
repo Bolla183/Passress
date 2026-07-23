@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
 import {
   startOfCairoMonth,
   endOfCairoMonth,
   addMonths,
   monthLabel,
 } from "@/lib/dates";
+import { listSimpleEntries } from "@/lib/accounting/quickEntry";
 import SummaryCards from "@/components/SummaryCards";
 import CategoryBarChart from "@/components/CategoryBarChart";
 import { formatEGP } from "@/lib/currency";
@@ -33,12 +33,12 @@ export default async function MonthlyDashboard({
   const nextMonthStart = addMonths(selected, 1);
 
   const [current, previous] = await Promise.all([
-    prisma.transaction.findMany({ where: { date: { gte: start, lt: end } } }),
-    prisma.transaction.findMany({ where: { date: { gte: prevStart, lt: prevEnd } } }),
+    listSimpleEntries({ from: start, to: end }),
+    listSimpleEntries({ from: prevStart, to: prevEnd }),
   ]);
 
   const sumBy = (list: typeof current, type: "INCOME" | "EXPENSE") =>
-    list.filter((t) => t.type === type).reduce((s, t) => s + Number(t.amount), 0);
+    list.filter((t) => t.type === type).reduce((s, t) => s + t.amount, 0);
 
   const income = sumBy(current, "INCOME");
   const expense = sumBy(current, "EXPENSE");
@@ -49,7 +49,7 @@ export default async function MonthlyDashboard({
   current
     .filter((t) => t.type === "EXPENSE")
     .forEach((t) => {
-      categoryTotals.set(t.category, (categoryTotals.get(t.category) ?? 0) + Number(t.amount));
+      categoryTotals.set(t.category, (categoryTotals.get(t.category) ?? 0) + t.amount);
     });
   const categoryData = Array.from(categoryTotals, ([category, amount]) => ({
     category,

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { deleteQuickEntry } from "@/lib/accounting/quickEntry";
 
 export async function DELETE(
   _request: Request,
@@ -7,7 +7,7 @@ export async function DELETE(
 ) {
   const { id } = await ctx.params;
 
-  await prisma.transaction.delete({ where: { id } }).catch(() => null);
+  await deleteQuickEntry(id);
 
   return NextResponse.json({ ok: true });
 }
