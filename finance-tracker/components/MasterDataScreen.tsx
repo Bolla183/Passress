@@ -81,7 +81,10 @@ export default function MasterDataScreen({
     const next: Record<string, string | boolean> = {};
     for (const field of fields) {
       const value = item[field.name];
-      next[field.name] = field.type === "checkbox" ? Boolean(value) : String(value ?? "");
+      if (field.type === "checkbox") next[field.name] = Boolean(value);
+      else if (field.type === "date")
+        next[field.name] = value ? String(value).slice(0, 10) : "";
+      else next[field.name] = String(value ?? "");
     }
     setEditingId(item.id);
     setForm(next);
@@ -98,6 +101,8 @@ export default function MasterDataScreen({
       const raw = form[field.name];
       if (field.type === "number") payload[field.name] = raw === "" ? undefined : Number(raw);
       else if (field.type === "checkbox") payload[field.name] = raw;
+      else if (field.type === "date")
+        payload[field.name] = raw === "" ? undefined : new Date(`${raw}T00:00:00Z`).toISOString();
       else payload[field.name] = raw === "" ? undefined : raw;
     }
 
