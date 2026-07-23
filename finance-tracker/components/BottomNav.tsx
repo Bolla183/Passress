@@ -5,13 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 
 const TABS = [
   { href: "/add", label: "Add" },
-  { href: "/dashboard/executive", label: "Exec" },
-  { href: "/dashboard/daily", label: "Daily" },
-  { href: "/dashboard/monthly", label: "Monthly" },
-  { href: "/dashboard/trends", label: "Trends" },
+  { href: "/payroll", label: "Payroll" },
+  { href: "/dashboard/performance", label: "Performance" },
   { href: "/reports", label: "Reports" },
-  { href: "/data", label: "Data" },
-  { href: "/workflows", label: "Workflows" },
+  { href: "/more", label: "More", extraMatch: ["/dashboard/daily", "/dashboard/monthly", "/dashboard/trends", "/workflows", "/data"] },
 ];
 
 export default function BottomNav() {
@@ -29,7 +26,7 @@ export default function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 border-t border-hairline bg-paper">
       <div className="mx-auto flex max-w-lg overflow-x-auto">
         {TABS.map((tab) => {
-          const active = pathname.startsWith(tab.href);
+          const active = pathname.startsWith(tab.href) || (tab.extraMatch?.some((p) => pathname.startsWith(p)) ?? false);
           return (
             <Link
               key={tab.href}

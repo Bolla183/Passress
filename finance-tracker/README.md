@@ -35,32 +35,40 @@ fully wired as the reusable pattern the remaining 16 follow.
 
 ## What it does today
 
-- **Quick add** (`/add`): same simple form as before — pick Income/Expense,
-  tap a category, amount, date, note — now posting through the ledger.
-- **Daily / Monthly / Trends** (`/dashboard/*`): unchanged behavior, now
-  reading from journal lines instead of a flat table.
+The bottom nav is deliberately short — **Add, Payroll, Performance, Reports,
+More** — so day-to-day use only ever touches the first four. Everything from
+Phase B/C still exists, it's just tucked under **More** instead of competing
+for attention on every screen.
+
+- **Add** (`/add`): pick Income/Expense, tap a category, amount, date, note —
+  posts through the ledger. **Sync Shopify** on the same page pulls revenue
+  in automatically as journal entries (Debit Cash, Credit Shopify Sales).
+- **Payroll** (`/payroll`): type a name and an amount, hit Pay — no employee
+  record to set up first. The name is matched (or silently created) against
+  the Employee master table behind the scenes, so per-person totals still
+  work, but there's nothing to configure up front. Shows this month's total,
+  a by-person breakdown, and a running list, with month navigation.
+- **Performance** (`/dashboard/performance`): Revenue, Expenses, Net Profit,
+  and Margin %, a 12-month trend, and revenue/expense by category, with a
+  This Month/Last Month/This Quarter/This Year switch. Deliberately excludes
+  Cash Balance/AR/AP — those depend on Bank Accounts and Customers, which
+  aren't part of the day-to-day flow. Computed directly from the ledger
+  (`getExecutiveSummary`/`getMonthlyTrend` in `lib/accounting/reports.ts`),
+  not from the quick-add "simple entries" reconstruction, so it's always
+  complete regardless of which workflow posted the activity.
 - **Reports** (`/reports`): Trial Balance, General Ledger (drill into any
-  account), Profit & Loss, Balance Sheet, Cash Flow Statement.
-- **Master data** (`/data`): full Add/Edit/Delete/Search/Active-filter/Audit
-  screens for Suppliers and Bank Accounts today; the other 16 entities exist
-  in the database and have a service layer, with their screens next in line.
-- **Shopify sync**: same "Sync Shopify" button, now posting a journal entry
-  (Debit Cash, Credit Shopify Sales) per order instead of a flat row.
-- **Workflows** (`/workflows`): business processes that post through the same
-  ledger, sharing master data instead of free text:
-  - **Bills** (AP) and **Invoices** (AR): record what's owed, track partial
-    payments, post the correct entry on both creation and settlement.
-  - **Payroll**: one-click salary payment per employee (Debit Salaries,
-    Credit bank).
-  - **Loans**: disbursement and repayment, splitting each repayment into
-    principal and interest automatically.
-  - **Inventory**: Purchase (Debit Inventory / Credit AP-or-Cash, reusing
-    Bills for payment tracking), Sale (one balanced four-line entry — COGS
-    against Inventory at cost, and Cash/Bank/AR against Revenue at price —
-    with stock-level validation so you can't sell more than you have), and
-    Manufacture (moves cost from Raw Material to Finished Good inventory when
-    turning fabric into a finished piece). Stock levels and recent movements
-    are visible per product/warehouse.
+  account), Profit & Loss, Balance Sheet, Cash Flow Statement — the actual
+  financial statements, unchanged.
+- **More** (`/more`): everything else, still fully working —
+  - **Older dashboards**: Daily / Monthly / Trends, reading from journal
+    lines. Kept for reference; Performance supersedes them for day-to-day use.
+  - **Business workflows** (`/workflows`): Bills (AP) and Invoices (AR) with
+    partial-payment tracking; Loans (disbursement + repayment, split into
+    principal/interest); Inventory (Purchase/Sale/Manufacture, with COGS
+    posted at cost and stock-level validation).
+  - **Master data** (`/data`): full Add/Edit/Delete/Search/Active-filter/Audit
+    screens for Suppliers and Bank Accounts today; the other 16 entities exist
+    in the database with a service layer, screens to follow as needed.
 - **Auth**: unchanged — single shared password, signed session cookie.
 
 ## Local development

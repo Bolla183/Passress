@@ -800,8 +800,8 @@ model SalaryPayment {
   period         String
   amount         Decimal     @db.Decimal(14, 2)
   date           DateTime
-  bankAccountId  String
-  bankAccount    BankAccount @relation(fields: [bankAccountId], references: [id])
+  bankAccountId  String?
+  bankAccount    BankAccount? @relation(fields: [bankAccountId], references: [id])
   journalEntryId String?
   notes          String?
   createdBy      String?
