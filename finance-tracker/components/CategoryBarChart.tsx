@@ -27,9 +27,9 @@ export default function CategoryBarChart({
         />
         <Tooltip
           formatter={(value) => formatEGP(Number(value))}
-          contentStyle={{ fontSize: 12, border: "1px solid #e6e6e6" }}
+          contentStyle={{ fontSize: 12, border: "1px solid #e6e6e6", borderRadius: 8 }}
         />
-        <Bar dataKey="amount" fill="#131313" radius={[0, 2, 2, 0]} maxBarSize={18} />
+        <Bar dataKey="amount" fill="#131313" radius={[0, 6, 6, 0]} maxBarSize={18} />
       </BarChart>
     </ResponsiveContainer>
   );
