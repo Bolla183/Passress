@@ -31,12 +31,13 @@ export default function BottomNav() {
         <Link
           href="/add"
           aria-label="Add entry"
-          className="fixed bottom-20 right-5 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-ink text-2xl leading-none text-paper shadow-lg"
+          className="fixed right-5 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-ink text-2xl leading-none text-paper shadow-lg"
+          style={{ bottom: "calc(5rem + env(safe-area-inset-bottom))" }}
         >
           +
         </Link>
       )}
-      <nav className="fixed bottom-0 left-0 right-0 border-t border-hairline bg-paper">
+      <nav className="fixed bottom-0 left-0 right-0 border-t border-hairline bg-paper pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto flex max-w-lg overflow-x-auto">
           {TABS.map((tab) => {
             const active = tab.exact
