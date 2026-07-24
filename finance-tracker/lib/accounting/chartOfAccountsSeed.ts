@@ -184,6 +184,7 @@ export const CHART_OF_ACCOUNTS: AccountSeedNode[] = [
         showInQuickAdd: true,
         children: [
           { code: "5010", name: "Sample Production", type: "EXPENSE", normalBalance: "DEBIT", showInQuickAdd: true },
+          { code: "5020", name: "Fabric", type: "EXPENSE", normalBalance: "DEBIT", showInQuickAdd: true },
         ],
       },
       {
