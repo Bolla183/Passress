@@ -17,9 +17,9 @@ function DeltaBadge({ delta }: { delta: number }) {
   );
 }
 
-export default function KpiCards({ kpis }: { kpis: Kpi[] }) {
+export default function KpiCards({ kpis, columns = 3 }: { kpis: Kpi[]; columns?: 2 | 3 }) {
   return (
-    <div className="mb-8 grid grid-cols-3 gap-3">
+    <div className={`mb-8 grid gap-3 ${columns === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
       {kpis.map((kpi) => (
         <div key={kpi.label} className="rounded-2xl border border-hairline bg-paper px-3 py-4 text-center shadow-sm">
           <p className="mb-1 text-xs uppercase tracking-widest text-muted">{kpi.label}</p>

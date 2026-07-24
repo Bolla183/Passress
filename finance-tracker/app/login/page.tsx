@@ -29,7 +29,7 @@ function LoginForm() {
       return;
     }
 
-    router.push(searchParams.get("next") || "/add");
+    router.push(searchParams.get("next") || "/dashboard");
     router.refresh();
   }
 

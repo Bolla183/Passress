@@ -7,6 +7,8 @@
   --hairline: #e6e6e6;
   --income: #1f7a4d;
   --expense: #b3401f;
+  --accent: #9c7a2e;
+  --accent-bg: #f6f0df;
 }
 
 @theme inline {
@@ -16,6 +18,8 @@
   --color-hairline: var(--hairline);
   --color-income: var(--income);
   --color-expense: var(--expense);
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
   --font-sans: var(--font-geist-sans);
 }
 

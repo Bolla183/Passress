@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Passress Finance",
     short_name: "Passress",
     description: "Expense and revenue tracker for Passress",
-    start_url: "/add",
+    start_url: "/dashboard",
     display: "standalone",
     background_color: "#ffffff",
     theme_color: "#131313",
