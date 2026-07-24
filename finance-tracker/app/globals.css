@@ -9,6 +9,14 @@
   --expense: #b3401f;
   --accent: #9c7a2e;
   --accent-bg: #f6f0df;
+  --critical: #b3401f;
+  --critical-bg: #f8e6e0;
+  --warning: #b8790f;
+  --warning-bg: #f7ecd8;
+  --positive: #1f7a4d;
+  --positive-bg: #e4f0e8;
+  --opportunity: #3d6690;
+  --opportunity-bg: #e5edf3;
 }
 
 @theme inline {
@@ -20,6 +28,14 @@
   --color-expense: var(--expense);
   --color-accent: var(--accent);
   --color-accent-bg: var(--accent-bg);
+  --color-critical: var(--critical);
+  --color-critical-bg: var(--critical-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-positive: var(--positive);
+  --color-positive-bg: var(--positive-bg);
+  --color-opportunity: var(--opportunity);
+  --color-opportunity-bg: var(--opportunity-bg);
   --font-sans: var(--font-geist-sans);
 }
 

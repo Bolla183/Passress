@@ -2,7 +2,7 @@ import { startOfCairoMonth, endOfCairoMonth, startOfCairoDay, endOfCairoDay, add
 import { getExecutiveSummary, getMonthlyTrend, getProfitAndLoss, getBalanceSheet } from "@/lib/accounting/reports";
 import { getCapitalInvested } from "@/lib/modules/capital";
 import { getBusinessHealth } from "@/lib/accounting/healthScore";
-import { getDashboardInsights } from "@/lib/accounting/insights";
+import { getAIInsights } from "@/lib/accounting/insights";
 import { getRecentActivity } from "@/lib/accounting/activityFeed";
 import HeroMetric from "@/components/HeroMetric";
 import TodayCard from "@/components/TodayCard";
@@ -10,7 +10,7 @@ import KpiCards from "@/components/KpiCards";
 import HealthScoreCard from "@/components/HealthScoreCard";
 import PerformanceAreaChart from "@/components/PerformanceAreaChart";
 import ActivityPreview from "@/components/ActivityPreview";
-import InsightsCard from "@/components/InsightsCard";
+import InsightFeed from "@/components/InsightFeed";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +43,7 @@ export default async function DashboardPage() {
       getBalanceSheet(now),
       getBusinessHealth(),
       getMonthlyTrend(months),
-      getDashboardInsights(),
+      getAIInsights(),
       getRecentActivity(4),
     ]);
 
@@ -84,7 +84,7 @@ export default async function DashboardPage() {
 
       <ActivityPreview items={activity} />
 
-      <InsightsCard insights={insights} />
+      <InsightFeed insights={insights} />
     </div>
   );
 }
