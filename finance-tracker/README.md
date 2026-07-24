@@ -47,11 +47,15 @@ for attention on every screen.
   expand it), and the amount field refocuses after each save so logging
   several expenses in a row needs no extra taps. A small "Today / This
   month" strip at the top (`/api/performance/snapshot`, ledger-accurate)
-  gives an at-a-glance performance check without leaving the screen. **Sync
-  Shopify** on the same page pulls revenue in automatically as journal
-  entries (Debit Cash, Credit Shopify Sales). Installable to a phone home
-  screen (`app/manifest.ts` + generated icons) for a chrome-less, one-tap
-  launch straight into Add.
+  gives an at-a-glance performance check without leaving the screen.
+  Revenue syncs from Shopify automatically once a day via Vercel Cron
+  (`vercel.json` → `/api/cron/shopify-sync`); the **Sync Shopify** button
+  on the same page is still there for an on-demand sync in between. Both
+  paths share one function (`lib/modules/shopifySync.ts`) and only ask
+  Shopify for orders updated since the last successful sync
+  (`Company.lastShopifySyncAt`), so repeat syncs stay cheap regardless of
+  order history. Installable to a phone home screen (`app/manifest.ts` +
+  generated icons) for a chrome-less, one-tap launch straight into Add.
 - **Payroll** (`/payroll`): type a name and an amount, hit Pay — no employee
   record to set up first. The name is matched (or silently created) against
   the Employee master table behind the scenes, so per-person totals still
@@ -110,9 +114,16 @@ production sets itself up the same way — no manual migration step.
 | `SESSION_SECRET` | Any long random string, used to sign the session cookie |
 | `SHOPIFY_STORE_DOMAIN` | e.g. `your-store.myshopify.com` (for sales sync) |
 | `SHOPIFY_ADMIN_ACCESS_TOKEN` | A Shopify Admin API access token with `read_orders` scope |
+| `CRON_SECRET` | Any long random string. Required for the daily automatic Shopify sync — Vercel sends it as `Authorization: Bearer $CRON_SECRET` on the scheduled request, and `/api/cron/shopify-sync` checks it before running. Generate one with `openssl rand -hex 32` and add it in Vercel's project Environment Variables (same manual step as the other secrets below) |
 
 The Shopify variables are optional — the app works fully for manual entry
 without them. "Sync Shopify" will show an error until they're set.
+
+**On the Hobby plan, Vercel Cron only allows once-per-day schedules** —
+`vercel.json` is set to `0 3 * * *` (around 3am UTC daily; Vercel may fire it
+anytime in that hour). If the Vercel project is on the Pro plan, the
+schedule can be tightened to hourly (`0 * * * *`) or more often for closer
+to real-time revenue.
 
 ## Notes on the numbers
 

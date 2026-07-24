@@ -1,12 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatDistanceToNow } from "date-fns";
 
 export default function SyncButton() {
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/sync/shopify")
+      .then((r) => r.json())
+      .then((body) => {
+        if (!cancelled) setLastSyncedAt(body.lastSyncedAt ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleSync() {
     setSyncing(true);
@@ -23,6 +38,7 @@ export default function SyncButton() {
     }
 
     setMessage(`Synced ${body.created} new, ${body.updated} updated`);
+    setLastSyncedAt(new Date().toISOString());
     router.refresh();
   }
 
@@ -35,7 +51,9 @@ export default function SyncButton() {
       >
         {syncing ? "Syncing..." : "Sync Shopify"}
       </button>
-      {message && <p className="mt-1 text-xs text-muted">{message}</p>}
+      <p className="mt-1 text-xs text-muted">
+        {message ?? (lastSyncedAt ? `Last synced ${formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true })}` : "Not synced yet")}
+      </p>
     </div>
   );
 }
