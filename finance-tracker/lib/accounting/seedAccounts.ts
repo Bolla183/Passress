@@ -133,6 +133,33 @@ async function seedBankAccounts(companyId: string) {
   }
 }
 
+// Placeholder garment products so COGS entries (Fabric, Production) can be
+// tagged per-garment via JournalLine.productId -- the same dimension the
+// Inventory module already uses, and the foundation a future per-product
+// P&L/dashboard would read from. Real SKUs/cost/price can be edited anytime
+// via More -> Master Data -> Products.
+async function seedGarmentProducts(companyId: string) {
+  const products: Array<[string, string]> = [
+    ["Blazer", "BLZ-001"],
+    ["Pants", "PNT-001"],
+    ["Sleeves", "SLV-001"],
+  ];
+
+  for (const [name, sku] of products) {
+    // Check both -- the DB's real uniqueness constraint is (companyId, sku),
+    // but a name match also means "this garment already exists under some
+    // other SKU" and shouldn't get a second, duplicate row either.
+    const existing = await prisma.product.findFirst({
+      where: { companyId, OR: [{ name }, { sku }] },
+    });
+    if (existing) continue;
+
+    await prisma.product.create({
+      data: { companyId, name, sku, type: "FINISHED_GOOD" },
+    });
+  }
+}
+
 export async function seedCompanyAndAccounts() {
   const company = await ensureDefaultCompany();
 
@@ -147,6 +174,7 @@ export async function seedCompanyAndAccounts() {
   await seedPaymentMethods(company.id);
   await seedOrgDefaults(company.id);
   await seedBankAccounts(company.id);
+  await seedGarmentProducts(company.id);
 
   return company;
 }

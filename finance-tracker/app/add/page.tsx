@@ -6,7 +6,8 @@ import { formatEGP } from "@/lib/currency";
 import SyncButton from "@/components/SyncButton";
 
 type TxType = "INCOME" | "EXPENSE" | "CAPITAL";
-type QuickAddAccount = { id: string; name: string };
+type QuickAddAccount = { id: string; name: string; needsProduct?: boolean };
+type Product = { id: string; name: string };
 
 type AddedEntry = {
   id: string;
@@ -25,8 +26,10 @@ export default function AddPage() {
     income: [],
     expense: [],
   });
+  const [products, setProducts] = useState<Product[]>([]);
   const [type, setType] = useState<TxType>("EXPENSE");
   const [accountId, setAccountId] = useState<string>("");
+  const [productId, setProductId] = useState<string>("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(dateInputValue(new Date()));
@@ -54,6 +57,7 @@ export default function AddPage() {
       const snapshotBody = await snapshotRes.json();
       if (cancelled) return;
       setAccounts(accountsBody);
+      setProducts(accountsBody.products ?? []);
       setAccountId(pickDefaultCategory(accountsBody.expense, "EXPENSE"));
       setSnapshot(snapshotBody);
     }
@@ -64,9 +68,12 @@ export default function AddPage() {
   }, []);
 
   const categories = type === "INCOME" ? accounts.income : type === "EXPENSE" ? accounts.expense : [];
+  const selectedCategory = categories.find((c) => c.id === accountId);
+  const needsProduct = type === "EXPENSE" && Boolean(selectedCategory?.needsProduct);
 
   function switchType(next: TxType) {
     setType(next);
+    setProductId("");
     if (next === "CAPITAL") {
       setAccountId("");
       return;
@@ -77,6 +84,7 @@ export default function AddPage() {
 
   function selectCategory(id: string) {
     setAccountId(id);
+    setProductId("");
     localStorage.setItem(LAST_CATEGORY_KEY(type), id);
   }
 
@@ -105,7 +113,7 @@ export default function AddPage() {
         : await fetch("/api/transactions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ accountId, amount: numericAmount, date, note }),
+            body: JSON.stringify({ accountId, amount: numericAmount, date, note, productId: productId || undefined }),
           });
     setSaving(false);
 
@@ -129,6 +137,7 @@ export default function AddPage() {
     setAdded((prev) => [entry, ...prev]);
     setAmount("");
     setNote("");
+    setProductId("");
     amountRef.current?.focus();
 
     fetch("/api/performance/snapshot")
@@ -229,6 +238,26 @@ export default function AddPage() {
               </p>
             )}
           </div>
+        )}
+
+        {needsProduct && (
+          <label className="mb-6 block">
+            <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
+              Product (optional)
+            </span>
+            <select
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+              className="w-full border-b border-hairline bg-transparent py-2 text-sm outline-none focus:border-ink"
+            >
+              <option value="">Not tied to one product</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
 
         <label className="mb-4 block">
