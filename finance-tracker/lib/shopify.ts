@@ -18,7 +18,9 @@ function parseNextPageInfo(linkHeader: string | null): string | null {
   return new URL(urlMatch[1]).searchParams.get("page_info");
 }
 
-export async function fetchAllOrders(maxPages = 10): Promise<ShopifyOrder[]> {
+export async function fetchAllOrders(
+  { maxPages = 10, updatedAtMin }: { maxPages?: number; updatedAtMin?: Date } = {}
+): Promise<ShopifyOrder[]> {
   const domain = process.env.SHOPIFY_STORE_DOMAIN;
   const token = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
 
@@ -40,6 +42,7 @@ export async function fetchAllOrders(maxPages = 10): Promise<ShopifyOrder[]> {
       "fields",
       "id,name,created_at,total_price,financial_status"
     );
+    if (updatedAtMin) url.searchParams.set("updated_at_min", updatedAtMin.toISOString());
     if (pageInfo) url.searchParams.set("page_info", pageInfo);
 
     const res = await fetch(url, {

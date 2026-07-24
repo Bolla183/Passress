@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { dateInputValue } from "@/lib/dates";
 import { formatEGP } from "@/lib/currency";
+import SyncButton from "@/components/SyncButton";
 
 type TxType = "INCOME" | "EXPENSE";
 type QuickAddAccount = { id: string; name: string };
@@ -153,6 +154,10 @@ export default function AddPage() {
           </div>
         </div>
       )}
+
+      <div className="mb-6">
+        <SyncButton />
+      </div>
 
       <form onSubmit={handleSubmit}>
         <div className="mb-6 flex border border-hairline">
