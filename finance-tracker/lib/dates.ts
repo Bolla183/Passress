@@ -73,3 +73,26 @@ export function dateInputValue(date: Date): string {
 export function parseDateInputValue(value: string): Date {
   return new Date(`${value}T00:00:00Z`);
 }
+
+const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+// "Today" / "Yesterday" / "Mon, 21 Jul" for Timeline's day-grouped feed.
+// Built from fixed name arrays rather than toLocaleDateString -- Node's
+// server-side ICU and the browser's client-side ICU can format the same
+// locale/options pair with different punctuation (e.g. comma placement),
+// which produces a hydration mismatch since this runs in a client component.
+export function dayLabel(date: Date, now: Date = new Date()): string {
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.round((startOfCairoDay(now).getTime() - startOfCairoDay(date).getTime()) / dayMs);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  const shifted = cairoShifted(date);
+  const weekday = WEEKDAY_NAMES[shifted.getUTCDay()];
+  const day = shifted.getUTCDate();
+  const month = MONTH_NAMES[shifted.getUTCMonth()];
+  return `${weekday}, ${day} ${month}`;
+}

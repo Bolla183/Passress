@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 const TABS = [
   { href: "/dashboard", label: "Dashboard", exact: true },
+  { href: "/timeline", label: "Timeline" },
   { href: "/reports", label: "Reports" },
   {
     href: "/more",
@@ -45,7 +46,7 @@ export default function BottomNav() {
               <Link
                 key={tab.href}
                 href={tab.href}
-                className={`shrink-0 basis-1/4 px-2 py-3 text-center text-[11px] uppercase tracking-widest ${
+                className={`shrink-0 basis-1/5 px-2 py-3 text-center text-[11px] uppercase tracking-widest ${
                   active ? "text-ink font-medium" : "text-muted"
                 }`}
               >
@@ -55,7 +56,7 @@ export default function BottomNav() {
           })}
           <button
             onClick={handleLogout}
-            className="shrink-0 basis-1/4 px-2 py-3 text-center text-[11px] uppercase tracking-widest text-muted"
+            className="shrink-0 basis-1/5 px-2 py-3 text-center text-[11px] uppercase tracking-widest text-muted"
           >
             Logout
           </button>
