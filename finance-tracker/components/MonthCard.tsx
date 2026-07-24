@@ -1,6 +1,6 @@
 import { formatEGP } from "@/lib/currency";
 
-export default function TodayCard({
+export default function MonthCard({
   revenue,
   expense,
   profit,
@@ -11,7 +11,7 @@ export default function TodayCard({
 }) {
   return (
     <div className="mb-6 rounded-2xl border border-hairline bg-paper p-5 shadow-sm">
-      <p className="mb-3 text-xs uppercase tracking-widest text-muted">Today</p>
+      <p className="mb-3 text-xs uppercase tracking-widest text-muted">This Month</p>
       <div className="mb-1.5 flex items-center justify-between text-sm">
         <span className="text-muted">Revenue</span>
         <span className="font-medium text-income">{formatEGP(revenue)}</span>

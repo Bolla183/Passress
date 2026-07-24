@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { DEFAULT_COMPANY_ID } from "./company";
 import { getAccountByCode } from "./ledger";
+import { dateInputValue, startOfCairoDay } from "../dates";
 import type { Account } from "../../app/generated/prisma/client";
 
 type Activity = { debit: number; credit: number };
@@ -338,6 +339,44 @@ export async function getMonthlyTrend(
       };
     })
   );
+}
+
+export type DailyTrendPoint = { day: string; income: number; expense: number; net: number };
+
+// Day-by-day revenue/expense within a single range (typically the current
+// month, up to today) -- one query for every REVENUE/EXPENSE line in range,
+// bucketed by Cairo day in application code, rather than one getProfitAndLoss
+// call per day.
+export async function getDailyTrend(
+  { from, to }: { from: Date; to: Date },
+  companyId = DEFAULT_COMPANY_ID
+): Promise<DailyTrendPoint[]> {
+  const lines = await prisma.journalLine.findMany({
+    where: {
+      companyId,
+      account: { type: { in: ["REVENUE", "EXPENSE"] } },
+      journalEntry: { date: { gte: from, lte: to } },
+    },
+    select: { debit: true, credit: true, account: { select: { type: true } }, journalEntry: { select: { date: true } } },
+  });
+
+  const buckets = new Map<string, { income: number; expense: number }>();
+  for (const line of lines) {
+    const key = dateInputValue(line.journalEntry.date);
+    const bucket = buckets.get(key) ?? { income: 0, expense: 0 };
+    if (line.account.type === "REVENUE") bucket.income += Number(line.credit);
+    else bucket.expense += Number(line.debit);
+    buckets.set(key, bucket);
+  }
+
+  const points: DailyTrendPoint[] = [];
+  const lastDay = startOfCairoDay(to).getTime() < startOfCairoDay(new Date()).getTime() ? startOfCairoDay(to) : startOfCairoDay(new Date());
+  for (let cursor = startOfCairoDay(from); cursor.getTime() <= lastDay.getTime(); cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000)) {
+    const key = dateInputValue(cursor);
+    const bucket = buckets.get(key) ?? { income: 0, expense: 0 };
+    points.push({ day: String(Number(key.slice(-2))), income: bucket.income, expense: bucket.expense, net: bucket.income - bucket.expense });
+  }
+  return points;
 }
 
 const INVESTING_SUBTYPES = new Set(["FIXED_ASSET", "FIXED_ASSET_CONTRA"]);

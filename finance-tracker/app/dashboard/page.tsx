@@ -1,11 +1,11 @@
-import { startOfCairoMonth, endOfCairoMonth, startOfCairoDay, endOfCairoDay, addMonths, monthLabel } from "@/lib/dates";
-import { getExecutiveSummary, getMonthlyTrend, getProfitAndLoss, getBalanceSheet } from "@/lib/accounting/reports";
+import { startOfCairoMonth, endOfCairoMonth, addMonths, monthLabel } from "@/lib/dates";
+import { getExecutiveSummary, getMonthlyTrend, getDailyTrend, getBalanceSheet } from "@/lib/accounting/reports";
 import { getCapitalInvested } from "@/lib/modules/capital";
 import { getBusinessHealth } from "@/lib/accounting/healthScore";
 import { getAIInsights } from "@/lib/accounting/insights";
 import { getRecentActivity } from "@/lib/accounting/activityFeed";
 import HeroMetric from "@/components/HeroMetric";
-import TodayCard from "@/components/TodayCard";
+import MonthCard from "@/components/MonthCard";
 import KpiCards from "@/components/KpiCards";
 import HealthScoreCard from "@/components/HealthScoreCard";
 import PerformanceAreaChart from "@/components/PerformanceAreaChart";
@@ -26,7 +26,6 @@ export default async function DashboardPage() {
   const thisMonth = { from: startOfCairoMonth(now), to: endOfCairoMonth(now) };
   const lastMonthDate = addMonths(now, -1);
   const lastMonth = { from: startOfCairoMonth(lastMonthDate), to: endOfCairoMonth(lastMonthDate) };
-  const today = { from: startOfCairoDay(now), to: endOfCairoDay(now) };
 
   const months: { start: Date; end: Date; label: string }[] = [];
   for (let i = TREND_MONTHS_BACK; i >= 0; i -= 1) {
@@ -34,11 +33,11 @@ export default async function DashboardPage() {
     months.push({ start: startOfCairoMonth(d), end: endOfCairoMonth(d), label: monthLabel(d) });
   }
 
-  const [current, previous, todayPnl, capitalInvested, balanceSheet, health, trend, insights, activity] =
+  const [current, previous, dailyTrend, capitalInvested, balanceSheet, health, trend, insights, activity] =
     await Promise.all([
       getExecutiveSummary(thisMonth),
       getExecutiveSummary(lastMonth),
-      getProfitAndLoss(today),
+      getDailyTrend(thisMonth),
       getCapitalInvested(now),
       getBalanceSheet(now),
       getBusinessHealth(),
@@ -57,7 +56,12 @@ export default async function DashboardPage() {
 
       <HeroMetric label="Cash Available" value={current.cashBalance} sublabel="as of today" />
 
-      <TodayCard revenue={todayPnl.totalRevenue} expense={todayPnl.totalExpense} profit={todayPnl.netProfit} />
+      <MonthCard revenue={current.totalRevenue} expense={current.totalExpense} profit={current.netProfit} />
+
+      <p className="mb-2 text-xs uppercase tracking-widest text-muted">Month Trend</p>
+      <div className="mb-8 rounded-2xl border border-hairline p-3 shadow-sm">
+        <PerformanceAreaChart data={dailyTrend.map((p) => ({ month: p.day, income: p.income, expense: p.expense, net: p.net }))} />
+      </div>
 
       <KpiCards
         kpis={[
