@@ -57,14 +57,18 @@ for attention on every screen.
   the Employee master table behind the scenes, so per-person totals still
   work, but there's nothing to configure up front. Shows this month's total,
   a by-person breakdown, and a running list, with month navigation.
-- **Performance** (`/dashboard/performance`): Revenue, Expenses, Net Profit,
-  and Margin %, a 12-month trend, and revenue/expense by category, with a
-  This Month/Last Month/This Quarter/This Year switch. Deliberately excludes
-  Cash Balance/AR/AP — those depend on Bank Accounts and Customers, which
-  aren't part of the day-to-day flow. Computed directly from the ledger
-  (`getExecutiveSummary`/`getMonthlyTrend` in `lib/accounting/reports.ts`),
-  not from the quick-add "simple entries" reconstruction, so it's always
-  complete regardless of which workflow posted the activity.
+- **Performance** (`/dashboard/performance`): a BI-style glance, not a table —
+  a hero Net Profit figure with a growth delta against the previous
+  comparable period, Revenue/Expenses/Margin on elevated cards, a
+  gradient-filled area chart for the 12-month revenue-vs-expense trend
+  (`components/PerformanceAreaChart.tsx`), and revenue/expense by category,
+  with a This Month/Last Month/This Quarter/This Year switch. Deliberately
+  excludes Cash Balance/AR/AP — those depend on Bank Accounts and Customers,
+  which aren't part of the day-to-day flow. Computed directly from the
+  ledger (`getExecutiveSummary`/`getMonthlyTrend` in
+  `lib/accounting/reports.ts`), not from the quick-add "simple entries"
+  reconstruction, so it's always complete regardless of which workflow
+  posted the activity.
 - **Reports** (`/reports`): Trial Balance, General Ledger (drill into any
   account), Profit & Loss, Balance Sheet, Cash Flow Statement — the actual
   financial statements, unchanged.

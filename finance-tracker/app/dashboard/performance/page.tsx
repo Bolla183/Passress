@@ -9,9 +9,10 @@ import {
   quarterLabel,
 } from "@/lib/dates";
 import { getExecutiveSummary, getMonthlyTrend } from "@/lib/accounting/reports";
+import HeroMetric from "@/components/HeroMetric";
 import KpiCards from "@/components/KpiCards";
 import CategoryBarChart from "@/components/CategoryBarChart";
-import TrendLineChart from "@/components/TrendLineChart";
+import PerformanceAreaChart from "@/components/PerformanceAreaChart";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,35 @@ function periodRange(period: PeriodId, now: Date): { from: Date; to: Date; label
   }
 }
 
+// The comparable period immediately before the selected one, for a
+// period-over-period growth delta (e.g. "This Month" vs "Last Month").
+function previousPeriodRange(period: PeriodId, now: Date): { from: Date; to: Date; label: string } {
+  switch (period) {
+    case "last-month": {
+      const target = addMonths(now, -2);
+      return { from: startOfCairoMonth(target), to: endOfCairoMonth(target), label: "the month before" };
+    }
+    case "this-quarter": {
+      const from = addMonths(startOfCairoQuarter(now), -3);
+      return { from, to: addMonths(from, 3), label: "last quarter" };
+    }
+    case "this-year": {
+      const from = addMonths(startOfCairoYear(now), -12);
+      return { from, to: addMonths(from, 12), label: "last year" };
+    }
+    case "this-month":
+    default: {
+      const target = addMonths(now, -1);
+      return { from: startOfCairoMonth(target), to: endOfCairoMonth(target), label: "last month" };
+    }
+  }
+}
+
+function pctChange(current: number, previous: number): number | null {
+  if (previous === 0) return current === 0 ? 0 : null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
 const TREND_MONTHS_BACK = 11;
 
 export default async function PerformanceDashboard({
@@ -57,6 +87,7 @@ export default async function PerformanceDashboard({
 
   const now = new Date();
   const { from, to, label } = periodRange(period, now);
+  const previous = previousPeriodRange(period, now);
 
   const months: { start: Date; end: Date; label: string }[] = [];
   for (let i = TREND_MONTHS_BACK; i >= 0; i -= 1) {
@@ -64,12 +95,16 @@ export default async function PerformanceDashboard({
     months.push({ start: startOfCairoMonth(d), end: endOfCairoMonth(d), label: monthLabel(d) });
   }
 
-  const [summary, trend] = await Promise.all([
+  const [summary, previousSummary, trend] = await Promise.all([
     getExecutiveSummary({ from, to }),
+    getExecutiveSummary({ from: previous.from, to: previous.to }),
     getMonthlyTrend(months),
   ]);
 
   const margin = summary.totalRevenue > 0 ? (summary.netProfit / summary.totalRevenue) * 100 : 0;
+  const netProfitDelta = pctChange(summary.netProfit, previousSummary.netProfit);
+  const revenueDelta = pctChange(summary.totalRevenue, previousSummary.totalRevenue);
+  const expenseDelta = pctChange(summary.totalExpense, previousSummary.totalExpense);
 
   return (
     <div className="mx-auto max-w-lg px-6 pt-10">
@@ -88,18 +123,24 @@ export default async function PerformanceDashboard({
       </div>
       <p className="mb-6 text-xs text-muted">{label}</p>
 
+      <HeroMetric
+        label="Net Profit"
+        value={summary.netProfit}
+        delta={netProfitDelta}
+        sublabel={`vs ${previous.label}`}
+      />
+
       <KpiCards
         kpis={[
-          { label: "Revenue", value: summary.totalRevenue, tone: "income" },
-          { label: "Expenses", value: summary.totalExpense, tone: "expense" },
-          { label: "Net Profit", value: summary.netProfit, tone: summary.netProfit >= 0 ? "income" : "expense" },
+          { label: "Revenue", value: summary.totalRevenue, tone: "income", delta: revenueDelta },
+          { label: "Expenses", value: summary.totalExpense, tone: "expense", delta: expenseDelta },
           { label: "Margin", value: margin, tone: margin >= 0 ? "income" : "expense", format: "percent" },
         ]}
       />
 
       <p className="mb-2 text-xs uppercase tracking-widest text-muted">Revenue vs Expense, last 12 months</p>
-      <div className="mb-8">
-        <TrendLineChart data={trend} />
+      <div className="mb-8 rounded-2xl border border-hairline p-3 shadow-sm">
+        <PerformanceAreaChart data={trend} />
       </div>
 
       <p className="mb-2 text-xs uppercase tracking-widest text-muted">Revenue by category ({label})</p>
