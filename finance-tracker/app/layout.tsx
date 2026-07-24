@@ -11,6 +11,10 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: "Passress Finance",
   description: "Expense and revenue tracker for Passress",
+  appleWebApp: {
+    title: "Passress",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export default function RootLayout({
