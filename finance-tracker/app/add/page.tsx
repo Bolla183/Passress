@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { dateInputValue } from "@/lib/dates";
 import { formatEGP } from "@/lib/currency";
 
@@ -15,6 +15,10 @@ type AddedEntry = {
   note: string | null;
 };
 
+type Snapshot = { income: number; expense: number; net: number };
+
+const LAST_CATEGORY_KEY = (type: TxType) => `passress:lastCategory:${type}`;
+
 export default function AddPage() {
   const [accounts, setAccounts] = useState<{ income: QuickAddAccount[]; expense: QuickAddAccount[] }>({
     income: [],
@@ -25,18 +29,32 @@ export default function AddPage() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [date, setDate] = useState(dateInputValue(new Date()));
+  const [showDetails, setShowDetails] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState<AddedEntry[]>([]);
+  const [snapshot, setSnapshot] = useState<{ today: Snapshot; month: Snapshot } | null>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
+
+  function pickDefaultCategory(list: QuickAddAccount[], forType: TxType): string {
+    const remembered = typeof window !== "undefined" ? localStorage.getItem(LAST_CATEGORY_KEY(forType)) : null;
+    if (remembered && list.some((c) => c.id === remembered)) return remembered;
+    return list[0]?.id ?? "";
+  }
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const res = await fetch("/api/accounts/quick-add");
-      const body = await res.json();
+      const [accountsRes, snapshotRes] = await Promise.all([
+        fetch("/api/accounts/quick-add"),
+        fetch("/api/performance/snapshot"),
+      ]);
+      const accountsBody = await accountsRes.json();
+      const snapshotBody = await snapshotRes.json();
       if (cancelled) return;
-      setAccounts(body);
-      setAccountId(body.expense[0]?.id ?? "");
+      setAccounts(accountsBody);
+      setAccountId(pickDefaultCategory(accountsBody.expense, "EXPENSE"));
+      setSnapshot(snapshotBody);
     }
     load();
     return () => {
@@ -49,7 +67,12 @@ export default function AddPage() {
   function switchType(next: TxType) {
     setType(next);
     const list = next === "INCOME" ? accounts.income : accounts.expense;
-    setAccountId(list[0]?.id ?? "");
+    setAccountId(pickDefaultCategory(list, next));
+  }
+
+  function selectCategory(id: string) {
+    setAccountId(id);
+    localStorage.setItem(LAST_CATEGORY_KEY(type), id);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -93,16 +116,43 @@ export default function AddPage() {
     ]);
     setAmount("");
     setNote("");
+    amountRef.current?.focus();
+
+    fetch("/api/performance/snapshot")
+      .then((r) => r.json())
+      .then(setSnapshot)
+      .catch(() => {});
   }
 
   async function handleDelete(id: string) {
     setAdded((prev) => prev.filter((entry) => entry.id !== id));
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+    fetch("/api/performance/snapshot")
+      .then((r) => r.json())
+      .then(setSnapshot)
+      .catch(() => {});
   }
 
   return (
     <div className="mx-auto max-w-lg px-6 pt-10">
-      <h1 className="mb-6 text-lg tracking-widest uppercase">Add entry</h1>
+      <h1 className="mb-4 text-lg tracking-widest uppercase">Add entry</h1>
+
+      {snapshot && (
+        <div className="mb-6 flex border border-hairline text-center">
+          <div className="flex-1 border-r border-hairline px-3 py-3">
+            <p className="mb-1 text-xs uppercase tracking-widest text-muted">Today</p>
+            <p className={`text-sm ${snapshot.today.net >= 0 ? "text-income" : "text-expense"}`}>
+              {formatEGP(snapshot.today.net)}
+            </p>
+          </div>
+          <div className="flex-1 px-3 py-3">
+            <p className="mb-1 text-xs uppercase tracking-widest text-muted">This month</p>
+            <p className={`text-sm ${snapshot.month.net >= 0 ? "text-income" : "text-expense"}`}>
+              {formatEGP(snapshot.month.net)}
+            </p>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit}>
         <div className="mb-6 flex border border-hairline">
@@ -131,7 +181,7 @@ export default function AddPage() {
             <button
               key={c.id}
               type="button"
-              onClick={() => setAccountId(c.id)}
+              onClick={() => selectCategory(c.id)}
               className={`border px-3 py-2 text-left text-sm ${
                 accountId === c.id
                   ? "border-ink bg-ink text-paper"
@@ -153,6 +203,7 @@ export default function AddPage() {
             Amount (EGP)
           </span>
           <input
+            ref={amountRef}
             type="number"
             inputMode="decimal"
             min="0"
@@ -165,30 +216,42 @@ export default function AddPage() {
           />
         </label>
 
-        <label className="mb-4 block">
-          <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
-            Date
-          </span>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-full border-b border-hairline bg-transparent py-2 text-sm outline-none focus:border-ink"
-          />
-        </label>
+        {showDetails ? (
+          <>
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
+                Date
+              </span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full border-b border-hairline bg-transparent py-2 text-sm outline-none focus:border-ink"
+              />
+            </label>
 
-        <label className="mb-6 block">
-          <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
-            Note (optional)
-          </span>
-          <input
-            type="text"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g. Meta ads - July campaign"
-            className="w-full border-b border-hairline bg-transparent py-2 text-sm outline-none focus:border-ink"
-          />
-        </label>
+            <label className="mb-6 block">
+              <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
+                Note (optional)
+              </span>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. Meta ads - July campaign"
+                className="w-full border-b border-hairline bg-transparent py-2 text-sm outline-none focus:border-ink"
+              />
+            </label>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowDetails(true)}
+            className="mb-6 text-xs uppercase tracking-widest text-muted underline"
+          >
+            + Date / note (today by default)
+          </button>
+        )}
 
         {error && <p className="mb-4 text-sm text-expense">{error}</p>}
 

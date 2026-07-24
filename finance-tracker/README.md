@@ -40,9 +40,18 @@ More** — so day-to-day use only ever touches the first four. Everything from
 Phase B/C still exists, it's just tucked under **More** instead of competing
 for attention on every screen.
 
-- **Add** (`/add`): pick Income/Expense, tap a category, amount, date, note —
-  posts through the ledger. **Sync Shopify** on the same page pulls revenue
-  in automatically as journal entries (Debit Cash, Credit Shopify Sales).
+- **Add** (`/add`): the app's landing page (login goes straight here) and
+  tuned for repeat use in under 10 seconds — the last category you used per
+  Income/Expense is remembered (`localStorage`) and pre-selected, Date/Note
+  are collapsed behind an optional toggle (today's date is used unless you
+  expand it), and the amount field refocuses after each save so logging
+  several expenses in a row needs no extra taps. A small "Today / This
+  month" strip at the top (`/api/performance/snapshot`, ledger-accurate)
+  gives an at-a-glance performance check without leaving the screen. **Sync
+  Shopify** on the same page pulls revenue in automatically as journal
+  entries (Debit Cash, Credit Shopify Sales). Installable to a phone home
+  screen (`app/manifest.ts` + generated icons) for a chrome-less, one-tap
+  launch straight into Add.
 - **Payroll** (`/payroll`): type a name and an amount, hit Pay — no employee
   record to set up first. The name is matched (or silently created) against
   the Employee master table behind the scenes, so per-person totals still
