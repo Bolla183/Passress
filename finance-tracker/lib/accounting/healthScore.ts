@@ -90,24 +90,45 @@ export async function getBusinessHealth(companyId = DEFAULT_COMPANY_ID): Promise
   const worst = sorted[sorted.length - 1];
 
   const why: string[] = [];
-  why.push(sentenceFor(best, true));
-  if (worst.name !== best.name) why.push(sentenceFor(worst, false));
+  why.push(sentenceFor(best, toneFor(best.score)));
+  if (worst.name !== best.name) why.push(sentenceFor(worst, toneFor(worst.score)));
 
   return { score, band: bandFor(score), factors, why };
 }
 
-function sentenceFor(factor: HealthFactor, positive: boolean): string {
+export type FactorTone = "positive" | "neutral" | "negative";
+
+// 50 is the deliberate neutral midpoint every factor's scoring curve is
+// built around (e.g. 0% revenue growth scores exactly 50) -- treating it
+// as "positive" would read as a contradiction ("Revenue is growing — 0%").
+export function toneFor(score: number): FactorTone {
+  if (score > 50) return "positive";
+  if (score < 50) return "negative";
+  return "neutral";
+}
+
+export function sentenceFor(factor: HealthFactor, tone: FactorTone): string {
   switch (factor.name) {
     case "Cash Position":
-      return positive ? `Strong cash position — ${factor.detail}` : `Cash position needs attention — ${factor.detail}`;
+      if (tone === "positive") return `Strong cash position — ${factor.detail}`;
+      if (tone === "negative") return `Cash position needs attention — ${factor.detail}`;
+      return `Cash position is adequate — ${factor.detail}`;
     case "Profitability":
-      return positive ? `Healthy margin — ${factor.detail}` : `Margin is thin — ${factor.detail}`;
+      if (tone === "positive") return `Healthy margin — ${factor.detail}`;
+      if (tone === "negative") return `Margin is thin — ${factor.detail}`;
+      return `Break-even margin — ${factor.detail}`;
     case "Revenue Growth":
-      return positive ? `Revenue is growing — ${factor.detail}` : `Revenue has slowed — ${factor.detail}`;
+      if (tone === "positive") return `Revenue is growing — ${factor.detail}`;
+      if (tone === "negative") return `Revenue has slowed — ${factor.detail}`;
+      return `Revenue is flat — ${factor.detail}`;
     case "Expense Control":
-      return positive ? "Expenses are under control relative to revenue" : "Expenses are growing faster than revenue";
+      if (tone === "positive") return "Expenses are under control relative to revenue";
+      if (tone === "negative") return "Expenses are growing faster than revenue";
+      return "Expenses are growing in line with revenue";
     case "Liquidity":
-      return positive ? "Solid liquidity to cover short-term obligations" : "Liquidity is tight relative to what's owed";
+      if (tone === "positive") return "Solid liquidity to cover short-term obligations";
+      if (tone === "negative") return "Liquidity is tight relative to what's owed";
+      return "Liquidity roughly covers what's owed";
     default:
       return "";
   }
