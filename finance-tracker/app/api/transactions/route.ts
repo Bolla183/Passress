@@ -4,16 +4,19 @@ import { postQuickEntry, listSimpleEntries, getQuickAddAccounts } from "@/lib/ac
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { accountId, amount, date, note } = body ?? {};
+  const { accountId, amount, date, note, productId } = body ?? {};
 
   if (typeof accountId !== "string" || !accountId) {
     return NextResponse.json({ error: "Invalid account" }, { status: 400 });
   }
 
-  const { income, expense } = await getQuickAddAccounts();
+  const { income, expense, products } = await getQuickAddAccounts();
   const isKnownAccount = [...income, ...expense].some((a) => a.id === accountId);
   if (!isKnownAccount) {
     return NextResponse.json({ error: "Invalid account" }, { status: 400 });
+  }
+  if (productId !== undefined && productId !== null && productId !== "" && !products.some((p) => p.id === productId)) {
+    return NextResponse.json({ error: "Invalid product" }, { status: 400 });
   }
 
   const numericAmount = Number(amount);
@@ -31,6 +34,7 @@ export async function POST(request: Request) {
       amount: numericAmount,
       date: parseDateInputValue(date),
       note: typeof note === "string" && note.trim() ? note.trim().slice(0, 200) : undefined,
+      productId: typeof productId === "string" && productId ? productId : undefined,
     });
     return NextResponse.json({ transaction }, { status: 201 });
   } catch (err) {

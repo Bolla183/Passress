@@ -21,11 +21,24 @@ export type SimpleEntry = {
   source: string;
 };
 
+// COGS accounts (children of "COGS / Inventory", 5000) are the ones a cost
+// can actually be attributed to a specific garment -- Rent or Marketing
+// can't, so only these surface the optional Product picker on the Add
+// screen.
+const COGS_PARENT_CODE = "5000";
+
 export async function getQuickAddAccounts(companyId = DEFAULT_COMPANY_ID) {
-  const accounts = await prisma.account.findMany({
-    where: { companyId, showInQuickAdd: true, isActive: true },
-    orderBy: { name: "asc" },
-  });
+  const [accounts, products] = await Promise.all([
+    prisma.account.findMany({
+      where: { companyId, showInQuickAdd: true, isActive: true },
+      include: { parent: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.product.findMany({
+      where: { companyId, isActive: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   return {
     income: accounts
@@ -33,7 +46,8 @@ export async function getQuickAddAccounts(companyId = DEFAULT_COMPANY_ID) {
       .map((a) => ({ id: a.id, name: a.name })),
     expense: accounts
       .filter((a) => a.type === "EXPENSE")
-      .map((a) => ({ id: a.id, name: a.name })),
+      .map((a) => ({ id: a.id, name: a.name, needsProduct: a.parent?.code === COGS_PARENT_CODE })),
+    products: products.map((p) => ({ id: p.id, name: p.name })),
   };
 }
 
@@ -45,18 +59,23 @@ export async function postQuickEntry(input: {
   source?: "MANUAL" | "SHOPIFY";
   reference?: string;
   companyId?: string;
+  productId?: string;
 }): Promise<SimpleEntry> {
   const companyId = input.companyId ?? DEFAULT_COMPANY_ID;
 
-  const [cash, target] = await Promise.all([
+  const [cash, target, product] = await Promise.all([
     getAccountByCode(DEFAULT_CASH_ACCOUNT_CODE, companyId),
     prisma.account.findUnique({ where: { id: input.accountId } }),
+    input.productId ? prisma.product.findUnique({ where: { id: input.productId } }) : null,
   ]);
   if (!target || target.companyId !== companyId) {
     throw new Error("Unknown account");
   }
   if (target.type !== "REVENUE" && target.type !== "EXPENSE") {
     throw new Error("Quick-add only supports income/expense accounts");
+  }
+  if (input.productId && (!product || product.companyId !== companyId)) {
+    throw new Error("Unknown product");
   }
 
   const isIncome = target.type === "REVENUE";
@@ -70,10 +89,10 @@ export async function postQuickEntry(input: {
     lines: isIncome
       ? [
           { accountId: cash.id, debit: input.amount },
-          { accountId: target.id, credit: input.amount },
+          { accountId: target.id, credit: input.amount, productId: product?.id },
         ]
       : [
-          { accountId: target.id, debit: input.amount },
+          { accountId: target.id, debit: input.amount, productId: product?.id },
           { accountId: cash.id, credit: input.amount },
         ],
   });
