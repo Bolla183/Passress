@@ -143,6 +143,7 @@ async function seedGarmentProducts(companyId: string) {
     ["Blazer", "BLZ-001"],
     ["Pants", "PNT-001"],
     ["Sleeves", "SLV-001"],
+    ["Clutch", "CLT-001"],
   ];
 
   for (const [name, sku] of products) {
