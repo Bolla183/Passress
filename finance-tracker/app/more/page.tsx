@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LogoutButton from "@/components/LogoutButton";
 
 const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = [
   {
@@ -48,6 +49,9 @@ export default function MoreIndex() {
           </ul>
         </div>
       ))}
+      <div className="mb-8 border-t border-hairline">
+        <LogoutButton />
+      </div>
     </div>
   );
 }

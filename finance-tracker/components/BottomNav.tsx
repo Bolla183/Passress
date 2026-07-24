@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 const TABS = [
   { href: "/dashboard", label: "Dashboard", exact: true },
@@ -16,14 +16,8 @@ const TABS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const router = useRouter();
 
   if (pathname === "/login") return null;
-
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-  }
 
   return (
     <>
@@ -38,7 +32,7 @@ export default function BottomNav() {
         </Link>
       )}
       <nav className="fixed bottom-0 left-0 right-0 border-t border-hairline bg-paper pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto flex max-w-lg overflow-x-auto">
+        <div className="mx-auto flex max-w-lg overflow-x-auto px-5">
           {TABS.map((tab) => {
             const active = tab.exact
               ? pathname === tab.href
@@ -47,7 +41,7 @@ export default function BottomNav() {
               <Link
                 key={tab.href}
                 href={tab.href}
-                className={`shrink-0 basis-1/5 px-2 py-3 text-center text-[11px] uppercase tracking-widest ${
+                className={`shrink-0 basis-1/4 px-0.5 py-3 text-center text-[11px] uppercase tracking-widest ${
                   active ? "text-ink font-medium" : "text-muted"
                 }`}
               >
@@ -55,12 +49,6 @@ export default function BottomNav() {
               </Link>
             );
           })}
-          <button
-            onClick={handleLogout}
-            className="shrink-0 basis-1/5 px-2 py-3 text-center text-[11px] uppercase tracking-widest text-muted"
-          >
-            Logout
-          </button>
         </div>
       </nav>
     </>
