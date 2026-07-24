@@ -1,4 +1,4 @@
-# Passress Financial Operating System
+# Passress Business Companion
 
 A double-entry accounting engine for Passress, with a mobile-first quick-entry
 UX on top so day-to-day use still feels like a simple tracker. Built with
@@ -35,57 +35,51 @@ fully wired as the reusable pattern the remaining 16 follow.
 
 ## What it does today
 
-The bottom nav is deliberately short — **Add, Payroll, Performance, Reports,
-More** — so day-to-day use only ever touches the first four. Everything from
-Phase B/C still exists, it's just tucked under **More** instead of competing
-for attention on every screen.
+Product direction is now driven by a PRD (`Passress Business Companion`,
+approved as the baseline) rebuilding the UX in milestones, on top of the
+unchanged accounting engine. **Milestone 2 (Dashboard)** is complete; Timeline
+(Milestone 3) and the Reports redesign (Milestone 4) are next.
 
-- **Add** (`/add`): the app's landing page (login goes straight here) and
-  tuned for repeat use in under 10 seconds — the last category you used per
-  Income/Expense is remembered (`localStorage`) and pre-selected, Date/Note
-  are collapsed behind an optional toggle (today's date is used unless you
-  expand it), and the amount field refocuses after each save so logging
-  several expenses in a row needs no extra taps. A small "Today / This
-  month" strip at the top (`/api/performance/snapshot`, ledger-accurate)
-  gives an at-a-glance performance check without leaving the screen.
-  Revenue syncs from Shopify automatically once a day via Vercel Cron
-  (`vercel.json` → `/api/cron/shopify-sync`); the **Sync Shopify** button
-  on the same page is still there for an on-demand sync in between. Both
-  paths share one function (`lib/modules/shopifySync.ts`) and only ask
-  Shopify for orders updated since the last successful sync
-  (`Company.lastShopifySyncAt`), so repeat syncs stay cheap regardless of
-  order history. Installable to a phone home screen (`app/manifest.ts` +
-  generated icons) for a chrome-less, one-tap launch straight into Add.
-- **Payroll** (`/payroll`): type a name and an amount, hit Pay — no employee
-  record to set up first. The name is matched (or silently created) against
-  the Employee master table behind the scenes, so per-person totals still
-  work, but there's nothing to configure up front. Shows this month's total,
-  a by-person breakdown, and a running list, with month navigation.
-- **Performance** (`/dashboard/performance`): a BI-style glance, not a table —
-  a hero Net Profit figure with a growth delta against the previous
-  comparable period, Revenue/Expenses/Margin on elevated cards, a
-  gradient-filled area chart for the 12-month revenue-vs-expense trend
-  (`components/PerformanceAreaChart.tsx`), and revenue/expense by category,
-  with a This Month/Last Month/This Quarter/This Year switch. Deliberately
-  excludes Cash Balance/AR/AP — those depend on Bank Accounts and Customers,
-  which aren't part of the day-to-day flow. Computed directly from the
-  ledger (`getExecutiveSummary`/`getMonthlyTrend` in
-  `lib/accounting/reports.ts`), not from the quick-add "simple entries"
-  reconstruction, so it's always complete regardless of which workflow
-  posted the activity.
-- **Reports** (`/reports`): Trial Balance, General Ledger (drill into any
-  account), Profit & Loss, Balance Sheet, Cash Flow Statement — the actual
-  financial statements, unchanged.
-- **More** (`/more`): everything else, still fully working —
-  - **Older dashboards**: Daily / Monthly / Trends, reading from journal
-    lines. Kept for reference; Performance supersedes them for day-to-day use.
-  - **Business workflows** (`/workflows`): Bills (AP) and Invoices (AR) with
-    partial-payment tracking; Loans (disbursement + repayment, split into
-    principal/interest); Inventory (Purchase/Sale/Manufacture, with COGS
-    posted at cost and stock-level validation).
-  - **Master data** (`/data`): full Add/Edit/Delete/Search/Active-filter/Audit
-    screens for Suppliers and Bank Accounts today; the other 16 entities exist
-    in the database with a service layer, screens to follow as needed.
+The bottom nav is **Dashboard, Reports, More**, with a floating **+** button
+(visible on every screen except Add itself) for quick entry — Timeline joins
+the bar as a fourth tab once Milestone 3 ships. Everything from earlier
+phases still exists, tucked under **More** instead of competing for
+attention on every screen.
+
+- **Dashboard** (`/dashboard`): the app's landing page (login goes straight
+  here). In priority order: a **Cash Available** hero (the founder's own
+  first question, "how much money do I have"), a **Today** card (Revenue/
+  Expenses/Profit so far, resets at midnight Cairo time), Net Profit/Capital
+  Invested/Owner Equity, a **Business Health Score** (0–100, a reproducible
+  weighted formula across Cash Position/Profitability/Revenue Growth/Expense
+  Control/Liquidity — never a guess — with a plain-language "why";
+  `lib/accounting/healthScore.ts`), Revenue/Expenses as secondary cards, a
+  gradient revenue-vs-expense trend chart, a recent-activity preview
+  (`lib/accounting/activityFeed.ts`, reads the ledger directly so nothing
+  posted through any workflow is invisible), and **Dashboard Insights** —
+  plain-language statements (`lib/accounting/insights.ts`) generated from
+  the same numbers, not hardcoded.
+- **Add** (`/add`): tuned for repeat use in under 10 seconds — the last
+  category you used per Income/Expense is remembered (`localStorage`) and
+  pre-selected, Date/Note are collapsed behind an optional toggle, and the
+  amount field refocuses after each save. A third toggle, **Capital**, records
+  money the owner puts into the business personally (Debit Cash / Credit
+  Owner's Equity — `lib/modules/capital.ts`), the only way Capital Invested
+  and Owner Equity have to grow. Revenue syncs from Shopify automatically
+  once a day via Vercel Cron (`vercel.json` → `/api/cron/shopify-sync`); the
+  **Sync Shopify** button here is still there for an on-demand sync in
+  between. Installable to a phone home screen for a chrome-less, one-tap
+  launch straight into Dashboard.
+- **Payroll** (`/payroll`, under More): type a name and an amount, hit Pay —
+  no employee record to set up first. Shows this month's total, a by-person
+  breakdown, and a running list, with month navigation.
+- **Reports** (`/reports`): Trial Balance, General Ledger, Profit & Loss,
+  Balance Sheet, Cash Flow Statement — unchanged pending Milestone 4's
+  chart-first redesign.
+- **More** (`/more`): Payroll, older dashboards (Daily/Monthly/Trends),
+  business workflows (Bills/Invoices/Loans/Inventory), and master data
+  (Suppliers, Bank Accounts, etc.) — all still fully working, just out of
+  the primary flow.
 - **Auth**: unchanged — single shared password, signed session cookie.
 
 ## Local development

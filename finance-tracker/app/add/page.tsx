@@ -5,7 +5,7 @@ import { dateInputValue } from "@/lib/dates";
 import { formatEGP } from "@/lib/currency";
 import SyncButton from "@/components/SyncButton";
 
-type TxType = "INCOME" | "EXPENSE";
+type TxType = "INCOME" | "EXPENSE" | "CAPITAL";
 type QuickAddAccount = { id: string; name: string };
 
 type AddedEntry = {
@@ -63,10 +63,14 @@ export default function AddPage() {
     };
   }, []);
 
-  const categories = type === "INCOME" ? accounts.income : accounts.expense;
+  const categories = type === "INCOME" ? accounts.income : type === "EXPENSE" ? accounts.expense : [];
 
   function switchType(next: TxType) {
     setType(next);
+    if (next === "CAPITAL") {
+      setAccountId("");
+      return;
+    }
     const list = next === "INCOME" ? accounts.income : accounts.expense;
     setAccountId(pickDefaultCategory(list, next));
   }
@@ -85,17 +89,24 @@ export default function AddPage() {
       setError("Enter a valid amount");
       return;
     }
-    if (!accountId) {
+    if (type !== "CAPITAL" && !accountId) {
       setError("Choose a category");
       return;
     }
 
     setSaving(true);
-    const res = await fetch("/api/transactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId, amount: numericAmount, date, note }),
-    });
+    const res =
+      type === "CAPITAL"
+        ? await fetch("/api/capital", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount: numericAmount, date, notes: note }),
+          })
+        : await fetch("/api/transactions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accountId, amount: numericAmount, date, note }),
+          });
     setSaving(false);
 
     if (!res.ok) {
@@ -104,17 +115,18 @@ export default function AddPage() {
       return;
     }
 
-    const { transaction } = await res.json();
-    setAdded((prev) => [
-      {
-        id: transaction.id,
-        type: transaction.type,
-        category: transaction.category,
-        amount: transaction.amount,
-        note: transaction.note,
-      },
-      ...prev,
-    ]);
+    const body = await res.json();
+    const entry: AddedEntry =
+      type === "CAPITAL"
+        ? { id: body.entry.id, type: "CAPITAL", category: "Owner Capital", amount: numericAmount, note: note || null }
+        : {
+            id: body.transaction.id,
+            type: body.transaction.type,
+            category: body.transaction.category,
+            amount: body.transaction.amount,
+            note: body.transaction.note,
+          };
+    setAdded((prev) => [entry, ...prev]);
     setAmount("");
     setNote("");
     amountRef.current?.focus();
@@ -125,9 +137,10 @@ export default function AddPage() {
       .catch(() => {});
   }
 
-  async function handleDelete(id: string) {
-    setAdded((prev) => prev.filter((entry) => entry.id !== id));
-    await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+  async function handleDelete(entry: AddedEntry) {
+    setAdded((prev) => prev.filter((e) => e.id !== entry.id));
+    const url = entry.type === "CAPITAL" ? `/api/capital/${entry.id}` : `/api/transactions/${entry.id}`;
+    await fetch(url, { method: "DELETE" });
     fetch("/api/performance/snapshot")
       .then((r) => r.json())
       .then(setSnapshot)
@@ -179,29 +192,44 @@ export default function AddPage() {
           >
             Income
           </button>
+          <button
+            type="button"
+            onClick={() => switchType("CAPITAL")}
+            className={`flex-1 py-3 text-sm uppercase tracking-widest ${
+              type === "CAPITAL" ? "bg-ink text-paper" : "text-muted"
+            }`}
+          >
+            Capital
+          </button>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-2">
-          {categories.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => selectCategory(c.id)}
-              className={`border px-3 py-2 text-left text-sm ${
-                accountId === c.id
-                  ? "border-ink bg-ink text-paper"
-                  : "border-hairline text-ink"
-              }`}
-            >
-              {c.name}
-            </button>
-          ))}
-          {categories.length === 0 && (
-            <p className="col-span-2 text-sm text-muted">
-              No categories yet — add one in Data → Chart of Accounts.
-            </p>
-          )}
-        </div>
+        {type === "CAPITAL" ? (
+          <p className="mb-6 text-sm text-muted">
+            Money you&apos;re putting into the business personally — this grows Capital Invested and Owner Equity on the Dashboard.
+          </p>
+        ) : (
+          <div className="mb-6 grid grid-cols-2 gap-2">
+            {categories.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => selectCategory(c.id)}
+                className={`border px-3 py-2 text-left text-sm ${
+                  accountId === c.id
+                    ? "border-ink bg-ink text-paper"
+                    : "border-hairline text-ink"
+                }`}
+              >
+                {c.name}
+              </button>
+            ))}
+            {categories.length === 0 && (
+              <p className="col-span-2 text-sm text-muted">
+                No categories yet — add one in Data → Chart of Accounts.
+              </p>
+            )}
+          </div>
+        )}
 
         <label className="mb-4 block">
           <span className="mb-1 block text-xs uppercase tracking-widest text-muted">
@@ -287,14 +315,14 @@ export default function AddPage() {
                 <div className="flex items-center gap-3">
                   <span
                     className={`text-sm ${
-                      entry.type === "INCOME" ? "text-income" : "text-expense"
+                      entry.type === "EXPENSE" ? "text-expense" : "text-income"
                     }`}
                   >
-                    {entry.type === "INCOME" ? "+" : "-"}
+                    {entry.type === "EXPENSE" ? "-" : "+"}
                     {formatEGP(entry.amount)}
                   </span>
                   <button
-                    onClick={() => handleDelete(entry.id)}
+                    onClick={() => handleDelete(entry)}
                     className="text-xs uppercase text-muted underline"
                   >
                     Undo

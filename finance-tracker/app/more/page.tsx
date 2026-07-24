@@ -11,7 +11,10 @@ const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = 
   },
   {
     title: "Business workflows",
-    links: [{ href: "/workflows", label: "Bills, Invoices, Loans, Inventory" }],
+    links: [
+      { href: "/payroll", label: "Payroll" },
+      { href: "/workflows", label: "Bills, Invoices, Loans, Inventory" },
+    ],
   },
   {
     title: "Master data",
