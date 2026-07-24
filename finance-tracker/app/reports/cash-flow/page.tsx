@@ -2,6 +2,9 @@ import Link from "next/link";
 import { startOfCairoMonth, endOfCairoMonth, addMonths, monthLabel } from "@/lib/dates";
 import { getCashFlowStatement } from "@/lib/accounting/reports";
 import { formatEGP } from "@/lib/currency";
+import HeroMetric from "@/components/HeroMetric";
+import KpiCards from "@/components/KpiCards";
+import CategoryBarChart from "@/components/CategoryBarChart";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +22,13 @@ export default async function CashFlowPage({
 
   const dateParam = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
   const isCurrentMonth = to > new Date();
+  const tone = (v: number) => (v >= 0 ? "income" as const : "expense" as const);
+
+  const flows = [
+    { category: "Operating", amount: cashFlow.operating },
+    { category: "Investing", amount: cashFlow.investing },
+    { category: "Financing", amount: cashFlow.financing },
+  ];
 
   return (
     <div className="mx-auto max-w-lg px-6 pt-10">
@@ -39,34 +49,58 @@ export default async function CashFlowPage({
         )}
       </div>
 
-      <table className="w-full text-sm">
-        <tbody>
-          <tr className="border-b border-hairline">
-            <td className="py-2">Opening Cash</td>
-            <td className="py-2 text-right">{formatEGP(cashFlow.openingCash)}</td>
-          </tr>
-          <tr className="border-b border-hairline">
-            <td className="py-2">Operating Activities</td>
-            <td className="py-2 text-right">{formatEGP(cashFlow.operating)}</td>
-          </tr>
-          <tr className="border-b border-hairline">
-            <td className="py-2">Investing Activities</td>
-            <td className="py-2 text-right">{formatEGP(cashFlow.investing)}</td>
-          </tr>
-          <tr className="border-b border-hairline">
-            <td className="py-2">Financing Activities</td>
-            <td className="py-2 text-right">{formatEGP(cashFlow.financing)}</td>
-          </tr>
-          <tr className="font-medium">
-            <td className="py-2">Net Change in Cash</td>
-            <td className="py-2 text-right">{formatEGP(cashFlow.netChange)}</td>
-          </tr>
-          <tr className="border-t border-ink font-medium">
-            <td className="pt-3">Closing Cash</td>
-            <td className="pt-3 text-right">{formatEGP(cashFlow.closingCash)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <HeroMetric label="Closing Cash" value={cashFlow.closingCash} sublabel={`${formatEGP(Math.abs(cashFlow.netChange))} ${cashFlow.netChange >= 0 ? "up" : "down"} this month`} />
+
+      <KpiCards
+        kpis={[
+          { label: "Operating", value: cashFlow.operating, tone: tone(cashFlow.operating) },
+          { label: "Investing", value: cashFlow.investing, tone: tone(cashFlow.investing) },
+          { label: "Financing", value: cashFlow.financing, tone: tone(cashFlow.financing) },
+        ]}
+      />
+
+      <p className="mb-2 text-xs uppercase tracking-widest text-muted">Where cash moved</p>
+      <div className="mb-6 rounded-2xl border border-hairline p-3 shadow-sm">
+        <CategoryBarChart data={flows} />
+      </div>
+
+      <p className="mb-8 text-sm text-muted">
+        Cash {cashFlow.netChange >= 0 ? "grew" : "shrank"} by{" "}
+        <span className={cashFlow.netChange >= 0 ? "text-income" : "text-expense"}>{formatEGP(Math.abs(cashFlow.netChange))}</span>{" "}
+        this month, ending at {formatEGP(cashFlow.closingCash)}.
+      </p>
+
+      <details className="mb-8">
+        <summary className="cursor-pointer text-xs uppercase tracking-widest text-muted">Full breakdown</summary>
+        <table className="mt-4 w-full text-sm">
+          <tbody>
+            <tr className="border-b border-hairline">
+              <td className="py-2">Opening Cash</td>
+              <td className="py-2 text-right">{formatEGP(cashFlow.openingCash)}</td>
+            </tr>
+            <tr className="border-b border-hairline">
+              <td className="py-2">Operating Activities</td>
+              <td className="py-2 text-right">{formatEGP(cashFlow.operating)}</td>
+            </tr>
+            <tr className="border-b border-hairline">
+              <td className="py-2">Investing Activities</td>
+              <td className="py-2 text-right">{formatEGP(cashFlow.investing)}</td>
+            </tr>
+            <tr className="border-b border-hairline">
+              <td className="py-2">Financing Activities</td>
+              <td className="py-2 text-right">{formatEGP(cashFlow.financing)}</td>
+            </tr>
+            <tr className="font-medium">
+              <td className="py-2">Net Change in Cash</td>
+              <td className="py-2 text-right">{formatEGP(cashFlow.netChange)}</td>
+            </tr>
+            <tr className="border-t border-ink font-medium">
+              <td className="pt-3">Closing Cash</td>
+              <td className="pt-3 text-right">{formatEGP(cashFlow.closingCash)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </details>
     </div>
   );
 }

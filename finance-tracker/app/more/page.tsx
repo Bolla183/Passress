@@ -20,6 +20,13 @@ const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = 
     title: "Master data",
     links: [{ href: "/data", label: "Suppliers, Bank Accounts, Employees, Products, Chart of Accounts..." }],
   },
+  {
+    title: "Advanced",
+    links: [
+      { href: "/reports/trial-balance", label: "Trial Balance" },
+      { href: "/reports/general-ledger", label: "General Ledger" },
+    ],
+  },
 ];
 
 export default function MoreIndex() {
