@@ -108,16 +108,21 @@ production sets itself up the same way — no manual migration step.
 | `SESSION_SECRET` | Any long random string, used to sign the session cookie |
 | `SHOPIFY_STORE_DOMAIN` | e.g. `your-store.myshopify.com` (for sales sync) |
 | `SHOPIFY_ADMIN_ACCESS_TOKEN` | A Shopify Admin API access token with `read_orders` scope |
-| `CRON_SECRET` | Any long random string. Required for the daily automatic Shopify sync — Vercel sends it as `Authorization: Bearer $CRON_SECRET` on the scheduled request, and `/api/cron/shopify-sync` checks it before running. Generate one with `openssl rand -hex 32` and add it in Vercel's project Environment Variables (same manual step as the other secrets below) |
+| `CRON_SECRET` | Any long random string. Required for the daily automatic Shopify sync and the daily digest email — Vercel sends it as `Authorization: Bearer $CRON_SECRET` on the scheduled request, and the two `/api/cron/*` routes check it before running. Generate one with `openssl rand -hex 32` and add it in Vercel's project Environment Variables (same manual step as the other secrets below) |
+| `RESEND_API_KEY` | API key from [resend.com](https://resend.com) (for the daily digest email) |
+| `DAILY_DIGEST_RECIPIENTS` | Comma-separated email addresses to send the daily digest to, e.g. `partner1@example.com,partner2@example.com` |
+| `DAILY_DIGEST_FROM` | Optional. The "from" address for the digest, e.g. `Passress <reports@yourdomain.com>` once a sending domain is verified on Resend. Defaults to Resend's shared `onboarding@resend.dev` sandbox sender, which can only deliver to the email address on the Resend account until a custom domain is verified |
 
-The Shopify variables are optional — the app works fully for manual entry
-without them. "Sync Shopify" will show an error until they're set.
+The Shopify and daily-digest variables are optional — the app works fully
+for manual entry without them. "Sync Shopify" will show an error until the
+Shopify variables are set, and the digest cron will fail (visibly, in its
+own logs) until `RESEND_API_KEY` and `DAILY_DIGEST_RECIPIENTS` are set.
 
 **On the Hobby plan, Vercel Cron only allows once-per-day schedules** —
-`vercel.json` is set to `0 3 * * *` (around 3am UTC daily; Vercel may fire it
-anytime in that hour). If the Vercel project is on the Pro plan, the
-schedule can be tightened to hourly (`0 * * * *`) or more often for closer
-to real-time revenue.
+`vercel.json` runs the Shopify sync at `0 3 * * *` and the daily digest at
+`0 5 * * *` (both UTC; Vercel may fire anytime within the scheduled hour).
+If the Vercel project is on the Pro plan, either schedule can be tightened
+for closer to real-time timing.
 
 ## Notes on the numbers
 

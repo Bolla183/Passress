@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   "/icon",
   "/apple-icon",
   "/api/cron/shopify-sync",
+  "/api/cron/daily-digest",
 ];
 
 export function proxy(request: NextRequest) {
