@@ -19,12 +19,14 @@
   "hidden_sheets": [
     "RAW_Orders",
     "RAW_OrderLines",
+    "RAW_Transactions",
     "RAW_Refunds",
     "RAW_Products",
     "RAW_Variants",
     "RAW_InventoryLevels",
     "RAW_Customers",
     "RAW_Collections",
+    "RAW_Discounts",
     "DIM_Date",
     "DIM_Product",
     "DIM_Customer",
@@ -84,6 +86,16 @@
       "name": "SetLookbackDaysIncrementalRefresh",
       "sheet": "15_Settings",
       "cell": "$C$25"
+    },
+    {
+      "name": "SetHistoricalBackfillStartDate",
+      "sheet": "15_Settings",
+      "cell": "$C$26"
+    },
+    {
+      "name": "SetMaxPagesPerRefreshSafetyCap",
+      "sheet": "15_Settings",
+      "cell": "$C$27"
     }
   ],
   "tables": [
@@ -120,12 +132,12 @@
     {
       "table": "tbl_ChartOfAccounts",
       "sheet": "15_Settings",
-      "ref": "B29:F30"
+      "ref": "B31:F32"
     },
     {
       "table": "tbl_VersionLog",
       "sheet": "15_Settings",
-      "ref": "B34:E35"
+      "ref": "B36:E39"
     },
     {
       "table": "tbl_RAW_Orders",
@@ -138,34 +150,44 @@
       "ref": "B11:K12"
     },
     {
+      "table": "tbl_RAW_Transactions",
+      "sheet": "RAW_Transactions",
+      "ref": "B11:K12"
+    },
+    {
       "table": "tbl_RAW_Refunds",
       "sheet": "RAW_Refunds",
-      "ref": "B11:H12"
+      "ref": "B11:K12"
     },
     {
       "table": "tbl_RAW_Products",
       "sheet": "RAW_Products",
-      "ref": "B11:H12"
+      "ref": "B11:I12"
     },
     {
       "table": "tbl_RAW_Variants",
       "sheet": "RAW_Variants",
-      "ref": "B11:I12"
+      "ref": "B11:K12"
     },
     {
       "table": "tbl_RAW_InventoryLevels",
       "sheet": "RAW_InventoryLevels",
-      "ref": "B11:E12"
+      "ref": "B11:F12"
     },
     {
       "table": "tbl_RAW_Customers",
       "sheet": "RAW_Customers",
-      "ref": "B11:I12"
+      "ref": "B11:J12"
     },
     {
       "table": "tbl_RAW_Collections",
       "sheet": "RAW_Collections",
       "ref": "B11:D12"
+    },
+    {
+      "table": "tbl_RAW_Discounts",
+      "sheet": "RAW_Discounts",
+      "ref": "B11:M12"
     },
     {
       "table": "tbl_DIM_Date",

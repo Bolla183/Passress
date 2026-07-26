@@ -190,8 +190,9 @@ def add_placeholder_box(ws, row, col, width, height, label, phase="Phase 3"):
     return r2 + 2  # next free row
 
 
-def add_table(ws, table_name, top_row, top_col, headers, category, example_row=None, n_placeholder_rows=1):
-    """Creates a real Excel Table with color-coded header + body per input-standard category."""
+def add_table(ws, table_name, top_row, top_col, headers, category, example_row=None, n_placeholder_rows=1, data_rows=None):
+    """Creates a real Excel Table with color-coded header + body per input-standard category.
+    data_rows: list of row-value-lists for permanent (non-"EXAMPLE") data, e.g. an append-only log."""
     style = CATEGORY_STYLE[category]
     ncols = len(headers)
     # header
@@ -204,14 +205,20 @@ def add_table(ws, table_name, top_row, top_col, headers, category, example_row=N
         cell.protection = Protection(locked=True)
     ws.row_dimensions[top_row].height = 18
 
-    n_rows = 1 if example_row else n_placeholder_rows
+    if data_rows:
+        n_rows = len(data_rows)
+    else:
+        n_rows = 1 if example_row else n_placeholder_rows
     for rr in range(1, n_rows + 1):
         row_idx = top_row + rr
-        values = example_row if (example_row and rr == 1) else ["" for _ in headers]
+        if data_rows:
+            values = data_rows[rr - 1]
+        else:
+            values = example_row if (example_row and rr == 1) else ["" for _ in headers]
         for i, val in enumerate(values):
             cell = ws.cell(row=row_idx, column=top_col + i, value=val if val != "" else None)
             unlocked = category == "input"
-            cell.font = f(size=9, color=style["body_font"], italic=(example_row is not None and rr == 1))
+            cell.font = f(size=9, color=style["body_font"], italic=(example_row is not None and rr == 1 and not data_rows))
             cell.fill = fill(style["body_fill"])
             cell.border = BORDER_ALL
             cell.protection = Protection(locked=not unlocked)
@@ -259,7 +266,23 @@ row = doc_block(
     last_col=12,
 )
 
+home_kpi_top = row
 row, _ = add_kpi_row(ws, row, ["Last Refresh", "Data Quality", "Workbook Version", "Phase Completed"], col_start=2, card_width=2)
+
+# "Workbook Version" / "Phase Completed" are live-linked to 15_Settings' Version
+# Log: every future phase appends a row there (see VERSION_LOG_ROWS) and these
+# two cards automatically show the latest one — no manual editing of Home needed.
+version_cell = ws.cell(row=home_kpi_top + 1, column=6, value="=INDEX(tbl_VersionLog[Version],COUNTA(tbl_VersionLog[Version]))")
+version_cell.font = f(size=20, bold=True, color=C["white"])
+version_cell.fill = fill(C["kpi_fill"])
+version_cell.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+version_cell.protection = Protection(locked=True)
+
+phase_cell = ws.cell(row=home_kpi_top + 1, column=8, value="=INDEX(tbl_VersionLog[Phase],COUNTA(tbl_VersionLog[Phase]))")
+phase_cell.font = f(size=13, bold=True, color=C["white"])
+phase_cell.fill = fill(C["kpi_fill"])
+phase_cell.alignment = Alignment(vertical="center", horizontal="left", indent=1, wrap_text=True)
+phase_cell.protection = Protection(locked=True)
 
 nav = [
     ("02", "Partner Dashboard"), ("03", "CEO Dashboard"), ("04", "Sales"),
@@ -601,11 +624,13 @@ row = settings_table(
 )
 
 row = settings_table(
-    ws, row, "SHOPIFY CONNECTION SETTINGS  (placeholders — wired live in Phase 2)",
+    ws, row, "SHOPIFY CONNECTION SETTINGS  (fill in Store Domain to go live; token is never stored here)",
     [
-        ("Shopify Store Domain", "your-store.myshopify.com", "Set when connecting Power Query in Phase 2. No token is ever stored in this workbook."),
+        ("Shopify Store Domain", "your-store.myshopify.com", "Set this to your real *.myshopify.com domain to go live. The access token itself is never stored in this workbook — see power-query/README.md."),
         ("Shopify API Version", "2025-01", "Admin GraphQL API version pinned for Power Query — reviewed twice a year."),
-        ("Lookback Days (Incremental Refresh)", "7", "Days of history re-pulled on each incremental refresh."),
+        ("Lookback Days (Incremental Refresh)", "7", "Rolling re-check window: days of history re-pulled on every refresh so late-updated records are never missed."),
+        ("Historical Backfill Start Date", "2024-01-01", "Earliest date fetched on a first-ever run (empty staging table). Ignored once a table has data — Lookback Days takes over."),
+        ("Max Pages Per Refresh (Safety Cap)", "500", "Hard stop on pagination per query per refresh (500 pages x 250 records ≈ 125,000 rows), so a misconfigured filter can't run away."),
     ],
     name_prefix="Set",
 )
@@ -622,13 +647,25 @@ row = add_table(
 row += 1
 
 # Workbook version log (calculated/system — light gray)
-ws.cell(row=row, column=2, value="WORKBOOK VERSION LOG  (system-maintained)").font = f(size=10, bold=True, color=C["text_gray"])
+# Every phase appends one row here — see VERSION_LOG_ROWS below. 01_Home's
+# "Workbook Version" / "Phase Completed" KPI cards read the LAST row of this
+# table live via formula, so this table is the single place that drives both.
+ws.cell(row=row, column=2, value="WORKBOOK VERSION LOG  (system-maintained — every phase appends a row here)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
+VERSION_LOG_ROWS = [
+    ["1.0", "2026-07-26", "Phase 1 — Workbook Foundation",
+     "Structure, tables, named ranges, documentation. No live data, no calculations."],
+    ["1.1", "2026-07-26", "Phase 1 Finalization",
+     "01_Home's Workbook Version / Phase Completed KPI cards now read this table's last row live via formula — every future phase appends a row here and Home updates automatically."],
+    ["2.0", "2026-07-26", "Phase 2 — Shopify GraphQL Ingestion Layer",
+     "Complete Power Query M layer: authentication (Extension.CurrentCredential, no hardcoded tokens), automatic cursor pagination, incremental refresh, HTTP/GraphQL error handling with backoff. Covers Products, Variants, Orders, Order Lines, Customers, Collections, Inventory Levels, Transactions, Refunds, Discounts — read-only (GraphQL query operations only). Added RAW_Transactions and RAW_Discounts staging sheets; revised RAW_Refunds and RAW_InventoryLevels to match verified Shopify Admin API schema. See /passress-mis/power-query/README.md and DOCUMENTATION.md. No dashboards yet."],
+]
+tbl_version_log_top_row = row
 row = add_table(
     ws, "tbl_VersionLog", row, 2,
     ["Version", "Date", "Phase", "Summary"],
     "calc",
-    example_row=["1.0", "2026-07-26", "Phase 1 — Workbook Foundation", "Structure, tables, named ranges, documentation. No live data, no calculations."],
+    data_rows=VERSION_LOG_ROWS,
 )
 
 freeze_below_header(ws)
@@ -696,30 +733,49 @@ def build_hidden_sheet(code, category, purpose, inputs, outputs, relationships, 
 
 
 RAW_SHEETS = [
-    dict(code="RAW_Orders", headers=["OrderID", "OrderNumber", "CreatedAt", "UpdatedAt", "FinancialStatus",
-                                      "FulfillmentStatus", "Currency", "TotalPrice", "SubtotalPrice",
-                                      "TotalDiscounts", "TotalTax", "CustomerID", "LocationID"]),
-    dict(code="RAW_OrderLines", headers=["LineItemID", "OrderID", "ProductID", "VariantID", "SKU", "Title",
-                                          "Quantity", "UnitPrice", "DiscountAllocated", "TaxAllocated"]),
-    dict(code="RAW_Refunds", headers=["RefundID", "OrderID", "LineItemID", "Quantity", "RefundAmount",
-                                       "RefundedAt", "Reason"]),
-    dict(code="RAW_Products", headers=["ProductID", "Title", "ProductType", "Vendor", "CollectionIDs",
-                                        "CreatedAt", "Status"]),
-    dict(code="RAW_Variants", headers=["VariantID", "ProductID", "SKU", "Title", "Price", "CompareAtPrice",
-                                        "InventoryItemID", "UnitCost"]),
-    dict(code="RAW_InventoryLevels", headers=["InventoryItemID", "LocationID", "Available", "UpdatedAt"]),
-    dict(code="RAW_Customers", headers=["CustomerID", "FirstName", "LastName", "Email", "CreatedAt",
-                                         "OrdersCount", "TotalSpent", "DefaultAddressCountry"]),
-    dict(code="RAW_Collections", headers=["CollectionID", "Title", "Handle"]),
+    dict(code="RAW_Orders", pq="staging/RAW_Orders.pq",
+         headers=["OrderID", "OrderNumber", "CreatedAt", "UpdatedAt", "FinancialStatus",
+                   "FulfillmentStatus", "Currency", "TotalPrice", "SubtotalPrice",
+                   "TotalDiscounts", "TotalTax", "CustomerID", "LocationID"]),
+    dict(code="RAW_OrderLines", pq="staging/RAW_OrderLines.pq",
+         headers=["LineItemID", "OrderID", "ProductID", "VariantID", "SKU", "Title",
+                   "Quantity", "UnitPrice", "DiscountAllocated", "TaxAllocated"]),
+    dict(code="RAW_Transactions", pq="staging/RAW_Transactions.pq",
+         headers=["TransactionID", "OrderID", "Kind", "Status", "Gateway", "AmountShop",
+                   "CurrencyShop", "CreatedAt", "ProcessedAt", "Test"]),
+    dict(code="RAW_Refunds", pq="staging/RAW_Refunds.pq",
+         headers=["RefundLineItemID", "RefundID", "OrderID", "LineItemID", "Quantity",
+                   "SubtotalAmount", "TaxAmount", "RefundCreatedAt", "RefundProcessedAt", "Note"]),
+    dict(code="RAW_Products", pq="staging/RAW_Products.pq",
+         headers=["ProductID", "Title", "ProductType", "Vendor", "CollectionIDs",
+                   "CreatedAt", "UpdatedAt", "Status"]),
+    dict(code="RAW_Variants", pq="staging/RAW_Variants.pq",
+         headers=["VariantID", "ProductID", "SKU", "Title", "Price", "CompareAtPrice",
+                   "InventoryItemID", "UnitCost", "CreatedAt", "UpdatedAt"]),
+    dict(code="RAW_InventoryLevels", pq="staging/RAW_InventoryLevels.pq",
+         headers=["InventoryItemID", "SKU", "LocationID", "Available", "UpdatedAt"]),
+    dict(code="RAW_Customers", pq="staging/RAW_Customers.pq",
+         headers=["CustomerID", "FirstName", "LastName", "Email", "CreatedAt", "UpdatedAt",
+                   "OrdersCount", "TotalSpent", "DefaultAddressCountry"]),
+    dict(code="RAW_Collections", pq="staging/RAW_Collections.pq",
+         headers=["CollectionID", "Title", "Handle"]),
+    dict(code="RAW_Discounts", pq="staging/RAW_Discounts.pq",
+         headers=["DiscountNodeID", "Typename", "Title", "Status", "Summary", "Code",
+                   "StartsAt", "EndsAt", "UsageLimit", "AsyncUsageCount", "CreatedAt", "UpdatedAt"]),
 ]
 for s in RAW_SHEETS:
     build_hidden_sheet(
         s["code"], "raw",
         purpose=f"Power Query staging landing zone for the Shopify {s['code'].replace('RAW_', '')} resource. Shape-only transforms (type casting, flattening) happen here — no business logic.",
-        inputs="Shopify Admin GraphQL API (fn_ShopifyGraphQL — Phase 2).",
-        outputs=f"Feeds the Data Model fact/dimension tables built from this resource.",
-        relationships="Connection-only in Excel; loaded to the Data Model, not to a worksheet grid, once Power Query is wired.",
-        future_source="Shopify Admin GraphQL API, via Power Query — Phase 2.",
+        inputs="Shopify Admin GraphQL API, via the fn_ShopifyGraphQL / fn_ShopifyPagedConnection shared functions.",
+        outputs="Feeds the Data Model fact/dimension tables built from this resource (Phase 3).",
+        relationships="Connection-only in Excel; loaded to the Data Model, not to a worksheet grid, once wired in Excel.",
+        future_source=(
+            f"Live now: paste passress-mis/power-query/{s['pq']} into this query in Excel's Power Query "
+            "Advanced Editor (Data > Get Data > Launch Power Query Editor > New Query > Blank Query). "
+            "See passress-mis/power-query/README.md for full setup and passress-mis/power-query/DOCUMENTATION.md "
+            "for the field-by-field mapping."
+        ),
         headers=s["headers"],
     )
 
