@@ -508,6 +508,26 @@ row = doc_block(
 home_kpi_top = row
 row, _ = add_kpi_row(ws, row, ["Last Refresh", "Data Quality", "Workbook Version", "Phase Completed"], col_start=2, card_width=2)
 
+# "Last Refresh" / "Data Quality" were left as static Phase 1 "—" placeholders
+# through Phases 2-6 even though this sheet's own doc_block always promised
+# they read LOG_RefreshHistory / LOG_DataQuality — found and wired in the
+# Phase 7 production-readiness review. Both use the same LOG_RefreshHistory
+# post-wiring table name convention already established for SKUList/etc.
+# (see the NAMED_LIST_RANGES comment near RAW_Variants below), and
+# OverallDataQualityPct is the same named range 14_Data_Quality/BI_HealthScore
+# already read — reused, not recomputed.
+last_refresh_cell = ws.cell(row=home_kpi_top + 1, column=2, value='=IFERROR(TEXT(MAX(LOG_RefreshHistory[Timestamp]),"dd-mmm hh:mm"),"—")')
+last_refresh_cell.font = f(size=13, bold=True, color=C["white"])
+last_refresh_cell.fill = fill(C["kpi_fill"])
+last_refresh_cell.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+last_refresh_cell.protection = Protection(locked=True)
+
+data_quality_cell = ws.cell(row=home_kpi_top + 1, column=4, value='=IFERROR(TEXT(OverallDataQualityPct,"0.0%"),"—")')
+data_quality_cell.font = f(size=20, bold=True, color=C["white"])
+data_quality_cell.fill = fill(C["kpi_fill"])
+data_quality_cell.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+data_quality_cell.protection = Protection(locked=True)
+
 # "Workbook Version" / "Phase Completed" are live-linked to 15_Settings' Version
 # Log: every future phase appends a row there (see VERSION_LOG_ROWS) and these
 # two cards automatically show the latest one — no manual editing of Home needed.
@@ -716,16 +736,26 @@ for spec in DASHBOARD_SHEETS:
     row += 1
     ws.cell(row=row, column=2, value="TRENDS & BREAKDOWNS").font = f(size=10, bold=True, color=C["text_gray"])
     row += 1
+    # "Not yet built" rather than a specific past phase name: every phase
+    # from 4 through 6 explicitly deferred this sheet's charts/PivotTables
+    # (Phase 4's own brief said "do not build dashboards yet"; Phase 5 named
+    # only Partner/CEO Dashboard for a bespoke rebuild; Phase 6 named none of
+    # these). The original "built in Phase 4" wording became actively wrong
+    # once Phase 4 finished without building it — fixed in the Phase 7
+    # production-readiness review. Building a real PivotTable/PivotChart here
+    # needs Excel itself (openpyxl can't write either reliably) — see
+    # dax/README.md for the manual build steps once the Data Model is wired.
+    NOT_YET_BUILT = "Not yet built — see dax/README.md"
     chart_row = row
     for ch in spec["charts"]:
-        row = add_placeholder_box(ws, chart_row, 2, 10, 8, ch, phase="Phase 4")
+        row = add_placeholder_box(ws, chart_row, 2, 10, 8, ch, phase=NOT_YET_BUILT)
         chart_row = row
     row += 1
     ws.cell(row=row, column=2, value="DETAIL (PIVOTTABLES)").font = f(size=10, bold=True, color=C["text_gray"])
     row += 1
     piv_col = 2
     for pv in spec["pivots"]:
-        row2 = add_placeholder_box(ws, row, piv_col, 5, 10, pv, phase="Phase 4")
+        row2 = add_placeholder_box(ws, row, piv_col, 5, 10, pv, phase=NOT_YET_BUILT)
         piv_col += 5
         if piv_col > 10:
             piv_col = 2
@@ -1138,7 +1168,39 @@ row = doc_block(
     "LOG_RefreshHistory / LOG_DataQuality, populated by Power Query refresh events — Phase 2.",
     last_col=5,
 )
+dq_kpi_top = row
 row, _ = add_kpi_row(ws, row, ["Last Refresh", "Rows Loaded", "Errors Found", "Data Freshness"], col_start=2, card_width=2)
+
+# Wired to LOG_RefreshHistory/LOG_DataQuality — left as static "—"
+# placeholders through Phases 2-6 despite this sheet existing specifically
+# to surface refresh health; found and wired in the Phase 7 production-
+# readiness review. "Errors Found" reuses the same WARNING-status check
+# already used by BI_Alerts (ALT-11) and the Refresh Failures row in
+# tbl_DataQualityChecks above — not recomputed differently here.
+dq_last_refresh = ws.cell(row=dq_kpi_top + 1, column=2, value='=IFERROR(TEXT(MAX(LOG_RefreshHistory[Timestamp]),"dd-mmm hh:mm"),"—")')
+dq_last_refresh.font = f(size=13, bold=True, color=C["white"])
+dq_last_refresh.fill = fill(C["kpi_fill"])
+dq_last_refresh.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+dq_last_refresh.protection = Protection(locked=True)
+
+dq_rows_loaded = ws.cell(row=dq_kpi_top + 1, column=4, value='=IFERROR(SUM(LOG_RefreshHistory[RowsLoaded]),"—")')
+dq_rows_loaded.font = f(size=20, bold=True, color=C["white"])
+dq_rows_loaded.fill = fill(C["kpi_fill"])
+dq_rows_loaded.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+dq_rows_loaded.protection = Protection(locked=True)
+
+dq_errors_found = ws.cell(row=dq_kpi_top + 1, column=6, value='=IFERROR(COUNTIF(LOG_DataQuality[Status],"WARNING*"),"—")')
+dq_errors_found.font = f(size=20, bold=True, color=C["white"])
+dq_errors_found.fill = fill(C["kpi_fill"])
+dq_errors_found.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+dq_errors_found.protection = Protection(locked=True)
+
+dq_freshness = ws.cell(row=dq_kpi_top + 1, column=8, value='=IFERROR(TODAY()-INT(MAX(LOG_RefreshHistory[Timestamp])),"—")')
+dq_freshness.font = f(size=20, bold=True, color=C["white"])
+dq_freshness.fill = fill(C["kpi_fill"])
+dq_freshness.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+dq_freshness.number_format = '0" days"'
+dq_freshness.protection = Protection(locked=True)
 row += 1
 ws.cell(row=row, column=2, value="VALIDATION RULES  (orange cells = configurable)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
@@ -1364,6 +1426,8 @@ VERSION_LOG_ROWS = [
      "02_Partner_Dashboard and 03_CEO_Dashboard rebuilt with real content: live KPI cards, a 12-month trend chart, and a Top-5-products list, all built with CUBEVALUE/CUBESET/CUBERANKEDMEMBER formulas reading the Data Model directly — no PivotTable required, so these resolve for real once the Data Model is wired, not just placeholders. BI_Insights and BI_Alerts (new hidden BI_ sheets): CUBEVALUE-driven auto-generated business insights and operational alerts, reusing Phase 2-4's own data-quality/reconciliation logic rather than duplicating it. BI_Forecast: rolling linear-trend forecasts (Excel's native FORECAST.LINEAR) for Sales/Expenses/Profit/Inventory/Cash, with an explicit Method column so a future AI forecasting layer is a swap-in, not a redesign. KPI Targets (15_Settings) and a yearly/monthly Budget module (08_Finance) with Actual-vs-Target and Actual/Forecast-vs-Budget DAX measures (dax/PHASE5_MEASURES_ADDENDUM.md, additive to Phase 4's MEASURES.md). Marketing-Ready Layer: 6 reserved, unconnected RAW_ tables (Meta/Google Analytics/Google Ads/TikTok/Email/Influencer) plus FACT_MarketingSpend, matching Phase 1's original placeholder pattern. FUTURE_AI_Insights: a reserved, unimplemented inventory of future AI features. Every dashboard now has a clickable breadcrumb back to 01_Home (title_bar's Home link). Global Filters panel (01_Home) prepares named filter cells for future slicer-equivalent filtering; native Excel Slicers still need real PivotTables (Phase 6) to attach to. Dashboards are landscape, fit-to-width, print-area-scoped for clean PDF export. See /passress-mis/PHASE5_DOCUMENTATION.md."],
     ["6.0", "2026-07-26", "Phase 6 — Operational Excellence, Automation, Auditability, Production Readiness",
      "RPT_ExecutiveBrief (new hidden sheet, linked from 01_Home): one-page A4-printable daily brief — today's Revenue/Orders/Gross Profit/Margin, Cash Position, Inventory Value, Revenue vs Yesterday, Top 5 Products/Collections, Critical Alerts, Business Health Score, Executive Commentary — also serves as the Automated Daily Report (print-ready from the start, no separate duplicate sheet). BI_HealthScore: the master 0-100 Business Health Score, 10 weighted components (weights editable on 15_Settings' new tbl_HealthScoreWeights), Red/Amber/Green status. 14_Data_Quality expanded with 11 checks (Missing SKU/Cost/Supplier, Duplicate Orders/Expenses, Products without Collection/Images, Negative Inventory, Missing Customer/Payment, Refresh Failures — Products without Images marked N/A, honestly, since RAW_Products.pq was never extended to fetch image data and Phase 6 must not modify Phase 2), an Overall Data Quality % (named range, reused by the Health Score), and a Historical Refresh Trend chart. RPT_Workflow (new hidden sheet): Purchase Orders/Open Orders/Pending Receipts/Inventory to Receive/Supplier Status/Capital Remaining/Outstanding Expenses/Monthly Purchasing — reuses existing measures under workflow-specific labels rather than inventing new ones. DIM_Date.pq extended (additively — every existing column unchanged) with IsWorkingDay/IsHoliday/HolidayName, reading a new empty-by-default Holidays table (15_Settings) — MTD/QTD/YTD/Rolling 12/Previous Year/SPLY needed no new columns, already fully covered by Phase 4's time intelligence. Drill-through hyperlinks added from Partner/CEO Dashboard KPI sections to their detail sheets (04_Sales/06_Customers/07_Inventory/09_Profitability/10_Expenses) — link-based navigation, not true OLAP drill-through, which needs real PivotTables (Phase 7+). PRODUCTION READINESS REVIEW found and fixed 5 real bugs: SKUList/CollectionTitleList named ranges and 3 Phase 5 Alert formulas referenced Phase 1's placeholder table names (tbl_RAW_Variants, tbl_LOG_RefreshHistory, tbl_LOG_DataQuality) instead of the permanent post-Power-Query-wiring names (RAW_Variants, LOG_RefreshHistory, LOG_DataQuality) — every DAX measure already used the correct convention; only these 5 worksheet-formula references were wrong, now fixed. Full findings in /passress-mis/PHASE6_PRODUCTION_READINESS_REVIEW.md; what's new in /passress-mis/PHASE6_DOCUMENTATION.md."],
+    ["7.0", "2026-07-26", "Phase 7 — Production Readiness Certification",
+     "Full line-by-line review of build_workbook.py, every Power Query shared function, a representative cross-section of staging/star-schema queries, and the complete DAX measure library, against explicit correctness/performance/security criteria. Found and fixed 5 real defects: BI_Alerts ALT-10's stray placeholder-token formula (simplified, no functional change but removed a maintenance trap); 14_Data_Quality's Historical Refresh Trend chart was off-by-one, silently dropping the first logged refresh; BI_Insights' INS-06/INS-07 (Best/Weakest seller) called CUBERANKEDMEMBER against an unordered, unranked MDX set, so both insights always showed the identical arbitrary product instead of true sales-ranked results — fixed with proper CUBESET-backed ranking (BDESC/BASC by Net Sales), the same pattern used everywhere else in the workbook; 01_Home's and 14_Data_Quality's Last Refresh/Data Quality/Rows Loaded/Errors Found KPI cards were left as static Phase 1 placeholders despite their own doc_block promising live LOG_ data — wired to existing LOG_RefreshHistory/LOG_DataQuality/OverallDataQualityPct sources, no new measures. Also corrected the now-inaccurate 'Placeholder, built in Phase 4' label on 04_Sales/06_Customers/07_Inventory/09_Profitability/13_Marketing/05_Products/08_Finance's still-unbuilt generic dashboard chart/PivotTable placeholders — deliberately left unbuilt (never commissioned by any phase's brief, and wiring their KPI cards would require inventing new DAX measures outside this phase's 'no new features' scope) but the stale phase-attribution text was actively misleading and is now accurate. Four new documentation deliverables: DEPLOYMENT_GUIDE.md, OPERATIONS_MANUAL.md, TECHNICAL_DOCUMENTATION.md, and PHASE7_FINAL_ARCHITECTURE_REVIEW.md (technical debt, performance/security review, SQL Server + Power BI migration path). No architecture changes, no new dashboards or modules — additive fixes and documentation only, per this phase's explicit scope."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
@@ -1835,10 +1899,14 @@ for s in LOG_SHEETS:
 # 14_Data_Quality's Historical Refresh Trend chart — deferred to here since
 # LOG_RefreshHistory (referenced below) only now exists. Over-provisioned to
 # row 500 since the log is append-only; Excel charts skip blank cells.
+# min_row=12, not 13: LOG_RefreshHistory's table header is on row 11 (every
+# hidden sheet's doc_block reserves rows 1-10), so its first data/log row is
+# 12 — starting the chart at 13 silently dropped the very first refresh
+# entry (found in the Phase 7 production-readiness review).
 _dq_ws = wb["14_Data_Quality"]
 _lrh_ws = wb["LOG_RefreshHistory"]
-_cats_ref_dq = Reference(_lrh_ws, min_col=3, max_col=3, min_row=13, max_row=500)  # Timestamp (C)
-_data_ref_dq = Reference(_lrh_ws, min_col=5, max_col=5, min_row=13, max_row=500)  # RowsLoaded (E)
+_cats_ref_dq = Reference(_lrh_ws, min_col=3, max_col=3, min_row=12, max_row=500)  # Timestamp (C)
+_data_ref_dq = Reference(_lrh_ws, min_col=5, max_col=5, min_row=12, max_row=500)  # RowsLoaded (E)
 add_native_line_chart(_dq_ws, f"B{DQ_CHART_ANCHOR_ROW}", "Rows Loaded per Refresh", _cats_ref_dq, _data_ref_dq, height_cm=6, width_cm=15)
 
 
@@ -1914,14 +1982,35 @@ ws = build_hidden_sheet(
 insight_row = ws.max_row + 2
 ws.cell(row=insight_row, column=2, value="INSIGHT FORMULAS  (CUBEVALUE-driven — see dax/PHASE5_MEASURES_ADDENDUM.md for the exact measures each one reads)").font = f(size=9, bold=True, color=C["text_gray"])
 insight_row += 1
+
+# INS-06/07 (Best/Weakest seller) need a CUBESET-backed CUBERANKEDMEMBER, not
+# a raw MDX set expression — "{[DIM_Product].[Title].Children}" alone is
+# UNORDERED, so rank 1 of it has no defined meaning and is not sorted by
+# sales; the original formula also called that same unordered expression for
+# both "best" and "weakest," so the two insights always displayed the exact
+# same (arbitrary) product. Fixed the way add_cube_top_n() already does it
+# everywhere else in the workbook: a CUBESET helper cell defines the ranked
+# set (BDESC/BASC by Net Sales), CUBERANKEDMEMBER pulls rank 1 from it.
+# Found in the Phase 7 production-readiness review.
+bestseller_row = insight_row + 5
+weakest_row = insight_row + 6
+bestseller_set_cell = ws.cell(row=bestseller_row, column=8, value=(
+    '=CUBESET("ThisWorkbookDataModel","{[DIM_Product].[Title].Children}","BestSeller","BDESC","[Measures].[Net Sales]")'
+))
+bestseller_set_cell.font = f(size=7, color=C["med_gray"])
+weakest_set_cell = ws.cell(row=weakest_row, column=8, value=(
+    '=CUBESET("ThisWorkbookDataModel","{[DIM_Product].[Title].Children}","WeakestSeller","BASC","[Measures].[Net Sales]")'
+))
+weakest_set_cell.font = f(size=7, color=C["med_gray"])
+
 INSIGHTS = [
     ("INS-01", "Sales", '="Net Sales "&TEXT(ABS(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Revenue Growth % (YoY)]")),"0.0%")&IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Revenue Growth % (YoY)]")>=0," higher"," lower")&" than the same period last year."'),
     ("INS-02", "Margin", '="Gross Margin is "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Gross Margin %]"),"0.0%")&", vs. a target of "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Margin Target]"),"0.0%")&"."'),
     ("INS-03", "Customers", '="Customer Retention (month-over-month) is "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Customer Retention Rate (MoM)]"),"0.0%")&"."'),
     ("INS-04", "Inventory", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Turnover]")<CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Turnover Target]"),"Inventory turnover is below target — stock may be moving slower than planned.","Inventory turnover is at or above target.")'),
     ("INS-05", "Cash", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Cash Position (Direct, Cumulative)]")>0,"Cash position is healthy (positive).","Cash position is negative — review Reconciliation: Cash Variance before acting on this.")'),
-    ("INS-06", "Products", '="Best seller: "&CUBERANKEDMEMBER("ThisWorkbookDataModel","{[DIM_Product].[Title].Children}",1)&"."'),
-    ("INS-07", "Products", '="Weakest seller (with any sales): "&CUBERANKEDMEMBER("ThisWorkbookDataModel","{[DIM_Product].[Title].Children}",1)&" — see 05_Products for the full ranked list rather than relying on one row here."'),
+    ("INS-06", "Products", f'="Best seller: "&CUBERANKEDMEMBER("ThisWorkbookDataModel",$H${bestseller_row},1)&"."'),
+    ("INS-07", "Products", f'="Weakest seller (with any sales): "&CUBERANKEDMEMBER("ThisWorkbookDataModel",$H${weakest_row},1)&" — see 05_Products for the full ranked list rather than relying on one row here."'),
     ("INS-08", "Orders", '="Average Order Value is "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Average Order Value]"),"#,##0")&" EGP, vs. a target of "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[AOV Target]"),"#,##0")&" EGP."'),
 ]
 for i, (iid, cat, formula) in enumerate(INSIGHTS):
@@ -1955,7 +2044,7 @@ ALERTS = [
     ("ALT-07", "Inactive Products", "Product Cost Master rows marked Inactive with no Active replacement", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")>0,"REVIEW — see Products without Cost above (same root cause)","OK")', "Info"),
     ("ALT-08", "Slow Moving Inventory", "SKUs below the Slow Moving threshold (dax/MEASURES.md)", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")&" SKUs)","OK")', "Info"),
     ("ALT-09", "Dead Stock", "SKUs with zero sales in 180 days while still holding stock", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")&" SKUs)","OK")', "Warning"),
-    ("ALT-10", "Missing Shopify Sync", "No successful refresh recorded", '=IF(COUNTROWS_PLACEHOLDER<>0,"TRIGGERED","OK")', "Critical"),
+    ("ALT-10", "Missing Shopify Sync", "No successful refresh recorded in the last 2 days", '=IF(COUNTIFS(LOG_RefreshHistory[Timestamp],">="&TODAY()-2)=0,"TRIGGERED","OK")', "Critical"),
     ("ALT-11", "Refresh Errors", "LOG_DataQuality rows with a WARNING status this refresh", '=IF(COUNTIF(LOG_DataQuality[Status],"WARNING*")>0,"TRIGGERED","OK")', "Warning"),
     ("ALT-12", "Over Budget Expenses", "Operating Expenses exceed the Budget for the current period", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Operating Expenses]")>CUBEVALUE("ThisWorkbookDataModel","[Measures].[Expense Budget (Period)]"),"TRIGGERED","OK")', "Warning"),
 ]
@@ -1966,11 +2055,6 @@ for i, (aid, name, cond, formula, sev) in enumerate(ALERTS):
     ws.cell(row=r, column=4, value=cond).font = f(size=8, italic=True, color=C["text_gray"])
     ws.cell(row=r, column=5, value=formula).font = f(size=9, color=C["calc_body"])
     ws.cell(row=r, column=6, value=sev).font = f(size=9, color=C["calc_body"])
-# ALT-10 needs a real formula, not the placeholder above — LOG_RefreshHistory
-# is append-only (Phase 2), so "no rows in the last 2 days" is the signal.
-# Column 5 = Status (the live formula column — see the per-row loop above).
-alt10_row = alert_row + 9
-ws.cell(row=alt10_row, column=5, value='=IF(COUNTIFS(LOG_RefreshHistory[Timestamp],">="&TODAY()-2)=0,"TRIGGERED","OK")')
 
 
 # ============================================================================
