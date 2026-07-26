@@ -235,62 +235,62 @@
     {
       "table": "tbl_VersionLog",
       "sheet": "15_Settings",
-      "ref": "B36:E40"
+      "ref": "B36:E41"
     },
     {
       "table": "tbl_LookupExpenseCategory",
       "sheet": "15_Settings",
-      "ref": "B44:B54"
+      "ref": "B45:B55"
     },
     {
       "table": "tbl_LookupExpenseSubcategory",
       "sheet": "15_Settings",
-      "ref": "B56:B68"
+      "ref": "B57:B69"
     },
     {
       "table": "tbl_LookupCostCenter",
       "sheet": "15_Settings",
-      "ref": "B70:B75"
+      "ref": "B71:B76"
     },
     {
       "table": "tbl_LookupPaymentMethod",
       "sheet": "15_Settings",
-      "ref": "B77:B83"
+      "ref": "B78:B84"
     },
     {
       "table": "tbl_LookupCurrency",
       "sheet": "15_Settings",
-      "ref": "B85:B89"
+      "ref": "B86:B90"
     },
     {
       "table": "tbl_LookupSupplierType",
       "sheet": "15_Settings",
-      "ref": "B91:B99"
+      "ref": "B92:B100"
     },
     {
       "table": "tbl_LookupSupplierStatus",
       "sheet": "15_Settings",
-      "ref": "B101:B104"
+      "ref": "B102:B105"
     },
     {
       "table": "tbl_LookupCapitalTransactionType",
       "sheet": "15_Settings",
-      "ref": "B106:B108"
+      "ref": "B107:B109"
     },
     {
       "table": "tbl_LookupPOStatus",
       "sheet": "15_Settings",
-      "ref": "B110:B117"
+      "ref": "B111:B118"
     },
     {
       "table": "tbl_LookupWarehouse",
       "sheet": "15_Settings",
-      "ref": "B119:B122"
+      "ref": "B120:B123"
     },
     {
       "table": "tbl_LookupOwner",
       "sheet": "15_Settings",
-      "ref": "B124:B125"
+      "ref": "B125:B126"
     },
     {
       "table": "tbl_RAW_Orders",
@@ -385,7 +385,7 @@
     {
       "table": "tbl_FACT_OrderLines",
       "sheet": "FACT_OrderLines",
-      "ref": "B11:O12"
+      "ref": "B11:P12"
     },
     {
       "table": "tbl_FACT_Refunds",
@@ -405,17 +405,17 @@
     {
       "table": "tbl_FACT_ManualExpenses",
       "sheet": "FACT_ManualExpenses",
-      "ref": "B11:M12"
+      "ref": "B11:N12"
     },
     {
       "table": "tbl_FACT_CapitalTransactions",
       "sheet": "FACT_CapitalTransactions",
-      "ref": "B11:F12"
+      "ref": "B11:G12"
     },
     {
       "table": "tbl_FACT_PurchaseOrderHeader",
       "sheet": "FACT_PurchaseOrderHeader",
-      "ref": "B11:G12"
+      "ref": "B11:H12"
     },
     {
       "table": "tbl_FACT_PurchaseOrderLines",
@@ -425,7 +425,7 @@
     {
       "table": "tbl_FACT_GoodsReceipt",
       "sheet": "FACT_GoodsReceipt",
-      "ref": "B11:I12"
+      "ref": "B11:J12"
     },
     {
       "table": "tbl_LOG_RefreshHistory",

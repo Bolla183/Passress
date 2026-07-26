@@ -839,6 +839,8 @@ VERSION_LOG_ROWS = [
      "Complete Power Query M layer: authentication (Extension.CurrentCredential, no hardcoded tokens), automatic cursor pagination, incremental refresh, HTTP/GraphQL error handling with backoff. Covers Products, Variants, Orders, Order Lines, Customers, Collections, Inventory Levels, Transactions, Refunds, Discounts — read-only (GraphQL query operations only). Added RAW_Transactions and RAW_Discounts staging sheets; revised RAW_Refunds and RAW_InventoryLevels to match verified Shopify Admin API schema. See /passress-mis/power-query/README.md and DOCUMENTATION.md. No dashboards yet."],
     ["3.0", "2026-07-26", "Phase 3 — Business Master Data & Manual-Entry Engine",
      "Product Cost Master with historical/versioned costing (05_Products). Complete Manual Expenses module: category/subcategory lookups, duplicate-flag column, document references (10_Expenses). Capital module (11_Capital). Expanded Supplier Master + full Purchase Order engine — Header/Lines/Goods Receipt with a Draft-to-Closed status workflow (12_Suppliers). Every dropdown sourced from an editable lookup table on 15_Settings — no hardcoded values — with input prompts and stop-on-error messages. SKU/Collection dropdowns reference the live Shopify RAW_ tables, not a separate manual list. New hidden Data-Model-ready mirrors: DIM_Supplier, DIM_ProductCostHistory, FACT_CapitalTransactions, FACT_PurchaseOrderHeader, FACT_PurchaseOrderLines, FACT_GoodsReceipt. See /passress-mis/PHASE3_DOCUMENTATION.md. Still no dashboards, PivotTables, DAX, or financial statements."],
+    ["4.0", "2026-07-26", "Phase 4 — Financial Calculation Engine (Data Model + DAX)",
+     "Completed the RAW_/manual-table -> star-schema transformation layer Phase 1 sketched but Phase 2-3 left empty (power-query/star-schema/, 18 M files): DIM_Date (generated calendar, fiscal-year aware), DIM_Product/Customer/Location/Collection/Supplier/ProductCostHistory, and every FACT_ table, including historically-correct COGS resolved per order line via fn_GetEffectiveCost (SKU + order date -> the Product Cost Master row active on that date, never today's cost). Full DAX measure library (dax/MEASURES.md): P&L, Balance Sheet, Cash Flow, Product Profitability, Customer Metrics (incl. cohorts), Inventory Metrics, Executive KPIs, and a full time-intelligence layer (MTD/QTD/YTD/previous period/SPLY/rolling 30-90-365) applied to the headline measures with the reusable pattern documented for extending to any other. Built as composable base measures referenced by name from composite ones — no duplicated calculations. Reconciliation section validates Balance Sheet (Assets=Liabilities+Equity), Cash Position (direct vs. indirect), Net Sales (FACT vs. RAW Shopify totals), and refund/cost-coverage integrity. Accounts Payable is a documented proxy (no payment-status field exists yet — flagged, not silently assumed). See /passress-mis/dax/README.md and MEASURES.md. Still no dashboards, PivotTables, PivotCharts, or KPI cards."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
@@ -1074,25 +1076,31 @@ NAMED_LIST_RANGES.append(("SKUList", "tbl_RAW_Variants", "SKU"))
 NAMED_LIST_RANGES.append(("CollectionTitleList", "tbl_RAW_Collections", "Title"))
 
 DIM_SHEETS = [
-    dict(code="DIM_Date", headers=["DateKey", "Date", "Year", "FiscalYear", "Quarter", "Month", "MonthName",
-                                    "Week", "Day", "DayName", "IsWeekend"]),
-    dict(code="DIM_Product", headers=["ProductKey", "ProductID", "SKU", "Title", "ProductType", "Vendor",
-                                       "Collection", "UnitCost", "Status"]),
-    dict(code="DIM_Customer", headers=["CustomerKey", "CustomerID", "Name", "Email", "Country",
-                                        "FirstOrderDate", "CustomerSegment"]),
-    dict(code="DIM_Location", headers=["LocationKey", "LocationID", "LocationName", "City", "Country"]),
-    dict(code="DIM_Collection", headers=["CollectionKey", "CollectionID", "Title", "Handle"]),
+    dict(code="DIM_Date", pq="star-schema/DIM_Date.pq",
+         headers=["DateKey", "Date", "Year", "FiscalYear", "Quarter", "Month", "MonthName",
+                   "Week", "Day", "DayName", "IsWeekend"]),
+    dict(code="DIM_Product", pq="star-schema/DIM_Product.pq",
+         headers=["ProductKey", "ProductID", "SKU", "Title", "ProductType", "Vendor",
+                   "Collection", "UnitCost", "Status"]),
+    dict(code="DIM_Customer", pq="star-schema/DIM_Customer.pq",
+         headers=["CustomerKey", "CustomerID", "Name", "Email", "Country",
+                   "FirstOrderDate", "CustomerSegment"]),
+    dict(code="DIM_Location", pq="star-schema/DIM_Location.pq",
+         headers=["LocationKey", "LocationID", "LocationName", "City", "Country"]),
+    dict(code="DIM_Collection", pq="star-schema/DIM_Collection.pq",
+         headers=["CollectionKey", "CollectionID", "Title", "Handle"]),
     dict(code="DIM_Parameters", headers=["ParameterName", "ParameterValue"]),
     # --- Phase 3 additions: mirrors of new manual master-data sheets ---
-    dict(code="DIM_Supplier", mirror_of="12_Suppliers (Supplier Master table)",
+    dict(code="DIM_Supplier", mirror_of="12_Suppliers (Supplier Master table)", pq="star-schema/DIM_Supplier.pq",
          headers=["SupplierKey", "SupplierID", "SupplierName", "SupplierType", "Currency", "Status"]),
-    dict(code="DIM_ProductCostHistory", mirror_of="05_Products (Product Cost Master table)",
+    dict(code="DIM_ProductCostHistory", mirror_of="05_Products (Product Cost Master table)", pq="star-schema/DIM_ProductCostHistory.pq",
          headers=["CostKey", "SKU", "Collection", "TotalLandedCost", "SellingPrice", "ExpectedGrossMarginPct",
                    "EffectiveFromDate", "EffectiveToDate", "ActiveFlag"]),
 ]
 for s in DIM_SHEETS:
     is_params = s["code"] == "DIM_Parameters"
     mirror_of = s.get("mirror_of")
+    pq = s.get("pq")
     build_hidden_sheet(
         s["code"], "dim",
         purpose=(
@@ -1109,55 +1117,56 @@ for s in DIM_SHEETS:
         inputs=(
             "15_Settings (linked manually / via Power Query, Phase 2)." if is_params else
             f"{mirror_of.split(' (')[0]}'s master-data table." if mirror_of else
-            "Derived from the matching RAW_ staging table(s)."
+            "RAW_ staging table(s) built in Phase 2."
         ),
         outputs="Referenced by DAX measures across all dashboards." if is_params else "Related to FACT_ tables in the Data Model (one-to-many).",
         relationships=(
             "N/A — disconnected table by design." if is_params else
-            "SKU relates to FACT_OrderLines; EffectiveFromDate/EffectiveToDate bound which cost row applies to a given order date (Phase 4 DAX)."
+            "SKU relates to FACT_OrderLines; EffectiveFromDate/EffectiveToDate bound which cost row applies to a given order date via fn_GetEffectiveCost (Power Query), not a Data Model relationship — see dax/README.md."
             if s["code"] == "DIM_ProductCostHistory" else
-            "SupplierID relates to FACT_PurchaseOrderHeader (one-to-many)." if s["code"] == "DIM_Supplier" else
-            "One-to-many into the relevant FACT_ table(s) on this dimension's key column."
+            "SupplierID relates to FACT_ManualExpenses/FACT_PurchaseOrderHeader; PrimarySupplierID on DIM_Product relates back here (one-to-many)." if s["code"] == "DIM_Supplier" else
+            "One-to-many into the relevant FACT_ table(s) on this dimension's key column — see dax/README.md for the full relationship list."
         ),
         future_source=(
             "Manual link to 15_Settings — Phase 3." if is_params else
-            f"Load {mirror_of.split(' (')[0]}'s table into this mirror — Phase 4 (Data Model wiring)." if mirror_of else
+            f"Live now: paste passress-mis/power-query/{pq} — see passress-mis/dax/README.md for setup order." if pq else
             "Built from RAW_ staging data in Power Query — Phase 2/3."
         ),
         headers=s["headers"],
     )
 
 FACT_SHEETS = [
-    dict(code="FACT_OrderLines", category="calc",
+    dict(code="FACT_OrderLines", category="calc", pq="star-schema/FACT_OrderLines.pq",
          headers=["OrderLineKey", "OrderID", "DateKey", "ProductKey", "CustomerKey", "LocationKey",
                    "Quantity", "UnitPrice", "GrossAmount", "DiscountAmount", "TaxAmount", "NetAmount",
-                   "UnitCost", "COGS"]),
-    dict(code="FACT_Refunds", category="calc",
+                   "UnitCost", "COGS", "MissingCostFlag"]),
+    dict(code="FACT_Refunds", category="calc", pq="star-schema/FACT_Refunds.pq",
          headers=["RefundKey", "OrderLineKey", "DateKey", "Quantity", "RefundAmount"]),
-    dict(code="FACT_InventoryMovements", category="calc",
+    dict(code="FACT_InventoryMovements", category="calc", pq="star-schema/FACT_InventoryMovements.pq",
          headers=["MovementKey", "DateKey", "ProductKey", "LocationKey", "MovementType", "QuantityChange",
                    "ResultingOnHand"]),
-    dict(code="FACT_Payments", category="calc",
+    dict(code="FACT_Payments", category="calc", pq="star-schema/FACT_Payments.pq",
          headers=["PaymentKey", "OrderID", "DateKey", "PaymentMethod", "Currency", "Amount",
                    "PresentmentAmount"]),
-    dict(code="FACT_ManualExpenses", category="input", mirror_of="10_Expenses",
-         headers=["ExpenseKey", "ExpenseDate", "ExpenseCategory", "ExpenseSubcategory", "SupplierID",
+    dict(code="FACT_ManualExpenses", category="input", mirror_of="10_Expenses", pq="star-schema/FACT_ManualExpenses.pq",
+         headers=["ExpenseKey", "DateKey", "ExpenseDate", "ExpenseCategory", "ExpenseSubcategory", "SupplierID",
                    "Amount", "Currency", "PaymentMethod", "RelatedCollection", "RelatedSKU", "CostCenter",
                    "InvoiceNumber"]),
     # --- Phase 3 additions: mirrors of new manual master-data sheets ---
-    dict(code="FACT_CapitalTransactions", category="input", mirror_of="11_Capital",
-         headers=["CapitalKey", "Date", "Owner", "TransactionType", "Amount"]),
-    dict(code="FACT_PurchaseOrderHeader", category="input", mirror_of="12_Suppliers (PO Header table)",
-         headers=["PONumber", "SupplierID", "OrderDate", "ExpectedDeliveryDate", "Status", "Currency"]),
-    dict(code="FACT_PurchaseOrderLines", category="input", mirror_of="12_Suppliers (PO Lines table)",
+    dict(code="FACT_CapitalTransactions", category="input", mirror_of="11_Capital", pq="star-schema/FACT_CapitalTransactions.pq",
+         headers=["CapitalKey", "DateKey", "Date", "Owner", "TransactionType", "Amount"]),
+    dict(code="FACT_PurchaseOrderHeader", category="input", mirror_of="12_Suppliers (PO Header table)", pq="star-schema/FACT_PurchaseOrderHeader.pq",
+         headers=["PONumber", "DateKey", "SupplierID", "OrderDate", "ExpectedDeliveryDate", "Status", "Currency"]),
+    dict(code="FACT_PurchaseOrderLines", category="input", mirror_of="12_Suppliers (PO Lines table)", pq="star-schema/FACT_PurchaseOrderLines.pq",
          headers=["PONumber", "SKU", "QuantityOrdered", "UnitCost", "TotalCost"]),
-    dict(code="FACT_GoodsReceipt", category="input", mirror_of="12_Suppliers (Goods Receipt table)",
-         headers=["PONumber", "SKU", "GoodsReceivedDate", "QuantityReceived", "RemainingQuantity",
+    dict(code="FACT_GoodsReceipt", category="input", mirror_of="12_Suppliers (Goods Receipt table)", pq="star-schema/FACT_GoodsReceipt.pq",
+         headers=["PONumber", "DateKey", "SKU", "GoodsReceivedDate", "QuantityReceived", "RemainingQuantity",
                    "ActualUnitCost", "VarianceFromPO", "Warehouse"]),
 ]
 for s in FACT_SHEETS:
     manual = s["category"] == "input"
     mirror_of = s.get("mirror_of", "10_Expenses")
+    pq = s.get("pq")
     ws = wb.create_sheet(s["code"])
     ws.sheet_view.showGridLines = False
     set_col_widths(ws, [3] + [16] * len(s["headers"]))
@@ -1167,11 +1176,11 @@ for s in FACT_SHEETS:
         (f"Manually entered fact, kept structurally separate from Shopify-sourced facts. Mirrors the input "
          f"table(s) on {mirror_of} — this is the Data Model-ready version of it."
          if manual else
-         f"Fact table for the star schema — transaction-level grain, built from RAW_ staging data plus dimension keys."),
+         f"Fact table for the star schema — transaction-level grain, built from RAW_ staging data plus dimension keys via Power Query (not re-fetched from Shopify)."),
         f"{mirror_of} manual entry table(s)." if manual else "RAW_ staging tables + DIM_ key lookups.",
-        "Referenced by DAX measures across 08_Finance, 09_Profitability, 02/03 dashboards." if manual else "Referenced by DAX measures across all dashboards.",
-        "Grain matches its source table on the visible sheet, one-for-one." if manual else "Many-to-one into each related DIM_ table.",
-        f"{mirror_of} (already the source of truth — no external system). Loaded into this mirror in Phase 4 (Data Model wiring)." if manual else "Built in Power Query from RAW_ + DIM_ — Phase 2/3.",
+        "Referenced by DAX measures — see passress-mis/dax/MEASURES.md.",
+        "Grain matches its source table on the visible sheet, one-for-one." if manual else "Many-to-one into each related DIM_ table — see dax/README.md for the full relationship list.",
+        f"Live now: paste passress-mis/power-query/{pq} — see passress-mis/dax/README.md for setup order." if pq else "Built in Power Query from RAW_ + DIM_ — Phase 2/3.",
         last_col=len(s["headers"]) + 1,
     )
     add_table(ws, "tbl_" + s["code"], row, 2, s["headers"], s["category"])

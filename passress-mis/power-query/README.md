@@ -1,5 +1,11 @@
 # PASSRESS MIS — Phase 2 Setup Guide: Shopify GraphQL Ingestion Layer
 
+> **Phase 4 addition:** once this Phase 2 layer is wired in, `star-schema/`
+> (new folder alongside `parameters/`, `shared/`, `staging/`) builds the
+> actual `FACT_`/`DIM_` tables on top of it, and `../dax/` has the full DAX
+> measure library that depends on those. See `../dax/README.md` for the
+> continuation — it assumes everything in this file is already done.
+
 ## Why these files aren't already inside the workbook
 
 Power Query's M code and query definitions live in a proprietary binary part
