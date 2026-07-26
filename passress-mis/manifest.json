@@ -56,7 +56,10 @@
     "FUTURE_AI_Insights",
     "BI_Insights",
     "BI_Alerts",
-    "BI_Forecast"
+    "BI_Forecast",
+    "BI_HealthScore",
+    "RPT_ExecutiveBrief",
+    "RPT_Workflow"
   ],
   "named_ranges": [
     {
@@ -93,6 +96,11 @@
       "name": "FilterCampaign",
       "sheet": "01_Home",
       "cell": "$N$32"
+    },
+    {
+      "name": "OverallDataQualityPct",
+      "sheet": "14_Data_Quality",
+      "cell": "$C$40"
     },
     {
       "name": "SetCompanyName",
@@ -147,6 +155,16 @@
     {
       "name": "SetMaxPagesPerRefreshSafetyCap",
       "sheet": "15_Settings",
+      "cell": "$C$27"
+    },
+    {
+      "name": "BusinessHealthScore",
+      "sheet": "BI_HealthScore",
+      "cell": "$C$26"
+    },
+    {
+      "name": "BusinessHealthStatus",
+      "sheet": "BI_HealthScore",
       "cell": "$C$27"
     }
   ],
@@ -233,12 +251,12 @@
     },
     {
       "name": "SKUList",
-      "table": "tbl_RAW_Variants",
+      "table": "RAW_Variants",
       "column": "SKU"
     },
     {
       "name": "CollectionTitleList",
-      "table": "tbl_RAW_Collections",
+      "table": "RAW_Collections",
       "column": "Title"
     }
   ],
@@ -294,6 +312,11 @@
       "ref": "B22:E23"
     },
     {
+      "table": "tbl_DataQualityChecks",
+      "sheet": "14_Data_Quality",
+      "ref": "B27:F28"
+    },
+    {
       "table": "tbl_ChartOfAccounts",
       "sheet": "15_Settings",
       "ref": "B31:F32"
@@ -301,82 +324,92 @@
     {
       "table": "tbl_VersionLog",
       "sheet": "15_Settings",
-      "ref": "B36:E42"
+      "ref": "B36:E43"
     },
     {
       "table": "tbl_LookupExpenseCategory",
       "sheet": "15_Settings",
-      "ref": "B46:B56"
+      "ref": "B47:B57"
     },
     {
       "table": "tbl_LookupExpenseSubcategory",
       "sheet": "15_Settings",
-      "ref": "B58:B70"
+      "ref": "B59:B71"
     },
     {
       "table": "tbl_LookupCostCenter",
       "sheet": "15_Settings",
-      "ref": "B72:B77"
+      "ref": "B73:B78"
     },
     {
       "table": "tbl_LookupPaymentMethod",
       "sheet": "15_Settings",
-      "ref": "B79:B85"
+      "ref": "B80:B86"
     },
     {
       "table": "tbl_LookupCurrency",
       "sheet": "15_Settings",
-      "ref": "B87:B91"
+      "ref": "B88:B92"
     },
     {
       "table": "tbl_LookupSupplierType",
       "sheet": "15_Settings",
-      "ref": "B93:B101"
+      "ref": "B94:B102"
     },
     {
       "table": "tbl_LookupSupplierStatus",
       "sheet": "15_Settings",
-      "ref": "B103:B106"
+      "ref": "B104:B107"
     },
     {
       "table": "tbl_LookupCapitalTransactionType",
       "sheet": "15_Settings",
-      "ref": "B108:B110"
+      "ref": "B109:B111"
     },
     {
       "table": "tbl_LookupPOStatus",
       "sheet": "15_Settings",
-      "ref": "B112:B119"
+      "ref": "B113:B120"
     },
     {
       "table": "tbl_LookupWarehouse",
       "sheet": "15_Settings",
-      "ref": "B121:B124"
+      "ref": "B122:B125"
     },
     {
       "table": "tbl_LookupOwner",
       "sheet": "15_Settings",
-      "ref": "B126:B127"
+      "ref": "B127:B128"
     },
     {
       "table": "tbl_LookupBudgetPeriod",
       "sheet": "15_Settings",
-      "ref": "B129:B131"
+      "ref": "B130:B132"
     },
     {
       "table": "tbl_LookupBudgetCategory",
       "sheet": "15_Settings",
-      "ref": "B133:B138"
+      "ref": "B134:B139"
     },
     {
       "table": "tbl_LookupAlertSeverity",
       "sheet": "15_Settings",
-      "ref": "B140:B143"
+      "ref": "B141:B144"
     },
     {
       "table": "tbl_KPITargets",
       "sheet": "15_Settings",
-      "ref": "B147:F157"
+      "ref": "B148:F158"
+    },
+    {
+      "table": "tbl_HealthScoreWeights",
+      "sheet": "15_Settings",
+      "ref": "B162:C172"
+    },
+    {
+      "table": "tbl_Holidays",
+      "sheet": "15_Settings",
+      "ref": "B176:C177"
     },
     {
       "table": "tbl_RAW_Orders",
@@ -577,6 +610,16 @@
       "table": "tbl_BI_Forecast",
       "sheet": "BI_Forecast",
       "ref": "B11:E12"
+    },
+    {
+      "table": "tbl_BI_HealthScore",
+      "sheet": "BI_HealthScore",
+      "ref": "B11:E12"
+    },
+    {
+      "table": "tbl_RPT_Workflow",
+      "sheet": "RPT_Workflow",
+      "ref": "B11:D12"
     }
   ]
 }

@@ -411,6 +411,23 @@ def add_cube_trend_table(ws, top_row, top_col, measure_name, n_months=12, label=
     return top_row, value_row, top_col + 1, top_col + n_months
 
 
+def add_drill_link(ws, row, col, label, target_sheet):
+    """Phase 6, item 7: Drill-through Experience. A real hyperlink from a
+    KPI/section to the existing sheet that shows its supporting detail — the
+    documented path is Revenue Card -> Monthly Sales (04_Sales) -> Order
+    Details -> Order Lines -> Customer -> Product; true interactive
+    OLAP-style drill-through (right-click a PivotTable cell > Show Details)
+    needs real PivotTables, which don't exist yet (a Phase 7+ capability
+    once Phase 6's Data Model is used to build them). This link-based
+    version is the honest, buildable version of that same navigation intent
+    today, and costs nothing to upgrade later — the target sheets don't
+    change, only how you reach them does."""
+    cell = ws.cell(row=row, column=col, value=f"↓ Drill into {target_sheet.split('_', 1)[1].replace('_', ' ')}")
+    cell.font = f(size=8, italic=True, color=C["text_gray"])
+    cell.hyperlink = f"#'{target_sheet}'!A1"
+    return row + 1
+
+
 def set_print_friendly(ws, last_col=12, last_row=90):
     """Phase 5, item 11: 'printable to PDF without breaking' — landscape,
     fit-to-width, a defined print area so PDF export doesn't spill columns
@@ -575,8 +592,25 @@ ws.row_dimensions[row].height = 14
 ws.row_dimensions[row + 1].height = 18
 row += 3
 
+# --- Reports & Tools (Phase 6) -----------------------------------------------
+# RPT_ExecutiveBrief and RPT_Workflow are hidden (per Phase 6's chosen
+# placement — see PHASE6_DOCUMENTATION.md), reached from here two ways:
+# the hyperlink below, or manually via right-click any sheet tab > Unhide.
+# Internal hyperlinks to hidden sheets are reasonably well supported in
+# current Excel but weren't testable in this environment — the Unhide path
+# is the guaranteed fallback if a link doesn't navigate as expected.
+ws.cell(row=row, column=2, value="REPORTS & TOOLS  (hidden sheets — click to open, or right-click any tab → Unhide)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+for label, sheet_code in [("Daily Executive Brief", "RPT_ExecutiveBrief"), ("Workflow Dashboard", "RPT_Workflow")]:
+    cell = ws.cell(row=row, column=2, value=f"→  {label}")
+    cell.font = f(size=10, color=C["text_gray"])
+    cell.hyperlink = f"#'{sheet_code}'!A1"
+    ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=5)
+    row += 1
+row += 1
+
 ws.cell(row=row, column=2, value=(
-    "Phase 5 build. See 15_Settings' Version Log for the full phase history and roadmap. "
+    "Phase 6 build. See 15_Settings' Version Log for the full phase history and roadmap. "
     "Data shown on dashboards resolves once the Data Model is wired — see power-query/README.md and dax/README.md."
 )).font = f(size=9, italic=True, color=C["text_gray"])
 freeze_below_header(ws)
@@ -728,6 +762,7 @@ row, _ = add_cube_kpi_row(ws, row, [
     ("Revenue", "Net Sales"), ("Net Profit", "Net Profit"), ("Margin %", "Gross Margin %", "0.0%"),
     ("Cash Position", "Cash Position (Direct, Cumulative)"), ("Orders", "Order Count"),
 ], col_start=2, card_width=2)
+row = add_drill_link(ws, row, 2, "Revenue", "04_Sales")
 row += 1
 
 ws.cell(row=row, column=2, value="MONTHLY TREND — NET SALES").font = f(size=10, bold=True, color=C["text_gray"])
@@ -796,10 +831,17 @@ CEO_SECTIONS = [
     ("PROFITABILITY", [("Gross Margin %", "Gross Margin %", "0.0%"), ("Net Profit Margin %", "Net Profit Margin %", "0.0%"), ("Break-Even Net Sales", "Break-Even Net Sales")]),
     ("EXPENSE ANALYSIS", [("Operating Expenses", "Operating Expenses"), ("Expense Ratio %", "Operating Expense Ratio %", "0.0%"), ("Expense Actual vs Budget", "Expense Actual vs Budget")]),
 ]
+CEO_SECTION_DRILL_TARGETS = {
+    "SALES KPIs": "04_Sales", "CUSTOMER KPIs": "06_Customers",
+    "INVENTORY KPIs": "07_Inventory", "PROFITABILITY": "09_Profitability",
+    "EXPENSE ANALYSIS": "10_Expenses",
+}
 for title, cards in CEO_SECTIONS:
     ws.cell(row=row, column=2, value=title).font = f(size=10, bold=True, color=C["text_gray"])
     row += 1
     row, _ = add_cube_kpi_row(ws, row, cards, col_start=2, card_width=2)
+    if title in CEO_SECTION_DRILL_TARGETS:
+        row = add_drill_link(ws, row, 2, title, CEO_SECTION_DRILL_TARGETS[title])
     row += 1
 
 # --- Budget summary (reads DAX Actual-vs-Budget measures directly) --------
@@ -1114,6 +1156,99 @@ row = add_table(
     ["Table", "Last Refreshed", "Row Count", "Status"],
     "calc",
 )
+row += 1
+
+# --- Data Quality Dashboard (Phase 6) ---------------------------------------
+# Expands this sheet rather than replacing anything above — same
+# append-below-existing-content pattern as every prior phase's additions.
+# Prefers plain worksheet formulas (COUNTIFS/SUMPRODUCT against the live
+# RAW_/DIM_/FACT_ tables) over CUBEVALUE wherever possible: data-quality
+# checks should work as soon as Power Query is refreshed, without requiring
+# the full Data Model + DAX layer to exist yet — checking your data before
+# you build reports on it is the right order of operations.
+set_col_widths(ws, [3, 30, 30, 16, 30, 30])
+ws.cell(row=row, column=2, value="DATA QUALITY CHECKS").font = f(size=12, bold=True, color=C["black"])
+row += 1
+dq_header_row = row
+row = add_table(
+    ws, "tbl_DataQualityChecks", row, 2,
+    ["Check Name", "Metric", "Result", "Status", "Notes"],
+    "calc",
+)
+dq_data_row = dq_header_row + 1
+DATA_QUALITY_CHECKS = [
+    ("Missing SKU", "RAW_Variants rows with a blank SKU",
+     '=COUNTIFS(RAW_Variants[SKU],"")',
+     "Reused from Alerts (ALT-04) — same check, not recomputed differently here."),
+    ("Missing Cost", "Order lines with no matching Product Cost Master row",
+     '=CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")',
+     "Reused from dax/MEASURES.md's [Lines Missing Cost] — same measure Alerts (ALT-03) reads."),
+    ("Missing Supplier", "SKUs with no PrimarySupplierID (DIM_Product)",
+     '=COUNTIFS(DIM_Product[PrimarySupplierID],"")',
+     "PrimarySupplierID is best-effort (most recent Goods Receipt per SKU) — see DIM_Product.pq. A count here is expected for never-received SKUs, not necessarily an error."),
+    ("Duplicate Orders", "OrderIDs appearing more than once in RAW_Orders",
+     '=SUMPRODUCT((COUNTIF(RAW_Orders[OrderID],RAW_Orders[OrderID])>1)*1)',
+     "Should always be 0 — Shopify order IDs are unique. A nonzero count means the Power Query refresh appended duplicate rows; check RAW_Orders.pq's incremental-window logic first."),
+    ("Duplicate Expenses", "Manual Expenses flagged Possible Duplicate",
+     '=COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")',
+     "Reused from Alerts (ALT-06) and Phase 3's own duplicate-flag column — not recomputed."),
+    ("Products without Collection", "RAW_Products rows with blank CollectionIDs",
+     '=COUNTIFS(RAW_Products[CollectionIDs],"")',
+     None),
+    ("Products without Images", "N/A — not computable with current data",
+     '="N/A"',
+     "RAW_Products.pq never fetched image data (not in Phase 2's original scope, and Phase 6 must not modify Phase 2's files) — adding an `images` field to that GraphQL query is a clean, isolated future addition, not a Phase 6 change."),
+    ("Negative Inventory", "RAW_InventoryLevels rows with Available < 0",
+     '=COUNTIFS(RAW_InventoryLevels[Available],"<0")',
+     "Should always be 0 — a negative available count usually signals an oversell or an inventory-sync issue in Shopify itself, not a workbook bug."),
+    ("Missing Customer", "RAW_Orders rows with a blank CustomerID",
+     '=COUNTIFS(RAW_Orders[CustomerID],"")',
+     "Expected to be nonzero for legitimate guest checkouts — a HIGH count relative to total orders is the actual signal worth investigating, not any nonzero count."),
+    ("Missing Payment", "Orders in RAW_Orders with no matching transaction in RAW_Transactions",
+     '=SUMPRODUCT((COUNTIF(RAW_Transactions[OrderID],RAW_Orders[OrderID])=0)*1)',
+     "An anti-join count — orders that exist but have zero associated payment transactions. Should be near 0 for a store where checkout = payment."),
+    ("Refresh Failures", "Refreshes with an error condition (from LOG_DataQuality)",
+     '=COUNTIF(LOG_DataQuality[Status],"WARNING*")',
+     "Reused from Alerts (ALT-11) — same LOG_DataQuality check, not recomputed."),
+]
+for i, (name, metric, formula, notes) in enumerate(DATA_QUALITY_CHECKS):
+    r = dq_data_row + i
+    ws.cell(row=r, column=2, value=name).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=3, value=metric).font = f(size=8, italic=True, color=C["text_gray"])
+    rc = ws.cell(row=r, column=4, value=formula)
+    rc.font = f(size=9, bold=True, color=C["calc_body"])
+    is_na = "N/A" in metric
+    status_formula = '="N/A"' if is_na else f'=IF(D{r}=0,"PASS","REVIEW")'
+    ws.cell(row=r, column=5, value=status_formula).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=6, value=notes or "").font = f(size=8, italic=True, color=C["text_gray"])
+    ws.row_dimensions[r].height = 26
+
+row = dq_data_row + len(DATA_QUALITY_CHECKS) + 1
+
+# Overall Data Quality % — share of the quantifiable checks (excludes the
+# one N/A row) currently passing. Named so BI_HealthScore's Data Quality
+# component can reference it without re-deriving the logic.
+ws.cell(row=row, column=2, value="Overall Data Quality %").font = f(size=10, bold=True, color=C["text_gray"])
+dq_pct_cell_row = row
+overall_dq_formula = (
+    f'=COUNTIF(E{dq_data_row}:E{dq_data_row + len(DATA_QUALITY_CHECKS) - 1},"PASS")'
+    f'/(COUNTA(E{dq_data_row}:E{dq_data_row + len(DATA_QUALITY_CHECKS) - 1})-COUNTIF(E{dq_data_row}:E{dq_data_row + len(DATA_QUALITY_CHECKS) - 1},"N/A"))'
+)
+dq_pct_cell = ws.cell(row=row, column=3, value=overall_dq_formula)
+dq_pct_cell.font = f(size=14, bold=True, color=C["calc_body"])
+dq_pct_cell.number_format = "0.0%"
+NAMED_RANGES.append(("OverallDataQualityPct", "14_Data_Quality", f"$C${dq_pct_cell_row}"))
+row += 2
+
+# Historical Refresh Trend — native chart against LOG_RefreshHistory's own
+# growing log (Phase 2). LOG_RefreshHistory doesn't exist yet at this point
+# in the script (built later, with the other LOG_/RAW_/DIM_/FACT_ sheets) —
+# the chart itself is added after that, anchored back to DQ_CHART_ANCHOR_ROW.
+ws.cell(row=row, column=2, value="HISTORICAL REFRESH TREND  (Rows Loaded per refresh, from LOG_RefreshHistory)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+DQ_CHART_ANCHOR_ROW = row
+row += 13
+
 freeze_below_header(ws)
 protect_ws(ws)
 ws.sheet_properties.tabColor = TAB_COLOR["report"]
@@ -1227,6 +1362,8 @@ VERSION_LOG_ROWS = [
      "Completed the RAW_/manual-table -> star-schema transformation layer Phase 1 sketched but Phase 2-3 left empty (power-query/star-schema/, 18 M files): DIM_Date (generated calendar, fiscal-year aware), DIM_Product/Customer/Location/Collection/Supplier/ProductCostHistory, and every FACT_ table, including historically-correct COGS resolved per order line via fn_GetEffectiveCost (SKU + order date -> the Product Cost Master row active on that date, never today's cost). Full DAX measure library (dax/MEASURES.md): P&L, Balance Sheet, Cash Flow, Product Profitability, Customer Metrics (incl. cohorts), Inventory Metrics, Executive KPIs, and a full time-intelligence layer (MTD/QTD/YTD/previous period/SPLY/rolling 30-90-365) applied to the headline measures with the reusable pattern documented for extending to any other. Built as composable base measures referenced by name from composite ones — no duplicated calculations. Reconciliation section validates Balance Sheet (Assets=Liabilities+Equity), Cash Position (direct vs. indirect), Net Sales (FACT vs. RAW Shopify totals), and refund/cost-coverage integrity. Accounts Payable is a documented proxy (no payment-status field exists yet — flagged, not silently assumed). See /passress-mis/dax/README.md and MEASURES.md. Still no dashboards, PivotTables, PivotCharts, or KPI cards."],
     ["5.0", "2026-07-26", "Phase 5 — BI Application Layer (Dashboards, Insights, Alerts, Budget, Forecast)",
      "02_Partner_Dashboard and 03_CEO_Dashboard rebuilt with real content: live KPI cards, a 12-month trend chart, and a Top-5-products list, all built with CUBEVALUE/CUBESET/CUBERANKEDMEMBER formulas reading the Data Model directly — no PivotTable required, so these resolve for real once the Data Model is wired, not just placeholders. BI_Insights and BI_Alerts (new hidden BI_ sheets): CUBEVALUE-driven auto-generated business insights and operational alerts, reusing Phase 2-4's own data-quality/reconciliation logic rather than duplicating it. BI_Forecast: rolling linear-trend forecasts (Excel's native FORECAST.LINEAR) for Sales/Expenses/Profit/Inventory/Cash, with an explicit Method column so a future AI forecasting layer is a swap-in, not a redesign. KPI Targets (15_Settings) and a yearly/monthly Budget module (08_Finance) with Actual-vs-Target and Actual/Forecast-vs-Budget DAX measures (dax/PHASE5_MEASURES_ADDENDUM.md, additive to Phase 4's MEASURES.md). Marketing-Ready Layer: 6 reserved, unconnected RAW_ tables (Meta/Google Analytics/Google Ads/TikTok/Email/Influencer) plus FACT_MarketingSpend, matching Phase 1's original placeholder pattern. FUTURE_AI_Insights: a reserved, unimplemented inventory of future AI features. Every dashboard now has a clickable breadcrumb back to 01_Home (title_bar's Home link). Global Filters panel (01_Home) prepares named filter cells for future slicer-equivalent filtering; native Excel Slicers still need real PivotTables (Phase 6) to attach to. Dashboards are landscape, fit-to-width, print-area-scoped for clean PDF export. See /passress-mis/PHASE5_DOCUMENTATION.md."],
+    ["6.0", "2026-07-26", "Phase 6 — Operational Excellence, Automation, Auditability, Production Readiness",
+     "RPT_ExecutiveBrief (new hidden sheet, linked from 01_Home): one-page A4-printable daily brief — today's Revenue/Orders/Gross Profit/Margin, Cash Position, Inventory Value, Revenue vs Yesterday, Top 5 Products/Collections, Critical Alerts, Business Health Score, Executive Commentary — also serves as the Automated Daily Report (print-ready from the start, no separate duplicate sheet). BI_HealthScore: the master 0-100 Business Health Score, 10 weighted components (weights editable on 15_Settings' new tbl_HealthScoreWeights), Red/Amber/Green status. 14_Data_Quality expanded with 11 checks (Missing SKU/Cost/Supplier, Duplicate Orders/Expenses, Products without Collection/Images, Negative Inventory, Missing Customer/Payment, Refresh Failures — Products without Images marked N/A, honestly, since RAW_Products.pq was never extended to fetch image data and Phase 6 must not modify Phase 2), an Overall Data Quality % (named range, reused by the Health Score), and a Historical Refresh Trend chart. RPT_Workflow (new hidden sheet): Purchase Orders/Open Orders/Pending Receipts/Inventory to Receive/Supplier Status/Capital Remaining/Outstanding Expenses/Monthly Purchasing — reuses existing measures under workflow-specific labels rather than inventing new ones. DIM_Date.pq extended (additively — every existing column unchanged) with IsWorkingDay/IsHoliday/HolidayName, reading a new empty-by-default Holidays table (15_Settings) — MTD/QTD/YTD/Rolling 12/Previous Year/SPLY needed no new columns, already fully covered by Phase 4's time intelligence. Drill-through hyperlinks added from Partner/CEO Dashboard KPI sections to their detail sheets (04_Sales/06_Customers/07_Inventory/09_Profitability/10_Expenses) — link-based navigation, not true OLAP drill-through, which needs real PivotTables (Phase 7+). PRODUCTION READINESS REVIEW found and fixed 5 real bugs: SKUList/CollectionTitleList named ranges and 3 Phase 5 Alert formulas referenced Phase 1's placeholder table names (tbl_RAW_Variants, tbl_LOG_RefreshHistory, tbl_LOG_DataQuality) instead of the permanent post-Power-Query-wiring names (RAW_Variants, LOG_RefreshHistory, LOG_DataQuality) — every DAX measure already used the correct convention; only these 5 worksheet-formula references were wrong, now fixed. Full findings in /passress-mis/PHASE6_PRODUCTION_READINESS_REVIEW.md; what's new in /passress-mis/PHASE6_DOCUMENTATION.md."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
@@ -1317,6 +1454,45 @@ for r_off in range(KPI_TARGET_ROWS):
         cell.protection = Protection(locked=True)
 add_dropdown(ws, f"E{kpi_targets_data_row}:E{kpi_targets_data_row + KPI_TARGET_ROWS - 1}", "LookupBudgetPeriod", "Period",
              "Monthly or Yearly.")
+row += 1
+
+# --- Business Health Score weights (Phase 6) --------------------------------
+# BI_HealthScore reads these 10 weights to compute the weighted composite
+# score — change a weight here (they don't need to sum to exactly 100; the
+# formula divides by their actual sum) rather than editing the formula.
+ws.cell(row=row, column=2, value="BUSINESS HEALTH SCORE WEIGHTS  (green cells = type here — must be numeric, any scale)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+health_weights_header_row = row
+row = add_table(
+    ws, "tbl_HealthScoreWeights", row, 2,
+    ["Component", "Weight"],
+    "input",
+    data_rows=[
+        ["Revenue Growth", 15], ["Gross Margin", 15], ["Cash Position", 15],
+        ["Inventory Health", 10], ["Customer Growth", 10], ["Repeat Customers", 10],
+        ["Return Rate", 10], ["Budget Performance", 5], ["Data Quality", 5], ["Alerts", 5],
+    ],
+)
+health_weights_data_row = health_weights_header_row + 1
+for r_off in range(10):
+    cell = ws.cell(row=health_weights_data_row + r_off, column=2)
+    cell.font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+    cell.fill = fill(CATEGORY_STYLE["calc"]["body_fill"])
+    cell.protection = Protection(locked=True)
+row += 1
+
+# --- Holidays (Phase 6, Financial Calendar) ---------------------------------
+# Empty by default — DIM_Date.pq's IsHoliday/HolidayName columns read this
+# table. No holidays are assumed or fabricated; populate with the business's
+# actual closure dates.
+ws.cell(row=row, column=2, value="HOLIDAYS  (green cells = type here — optional, empty by default)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_table(
+    ws, "tbl_Holidays", row, 2,
+    ["Date", "Holiday Name"],
+    "input",
+    example_row=["", "EXAMPLE — delete or overwrite this row; leave the table empty if no holidays apply"],
+)
 
 freeze_below_header(ws)
 protect_ws(ws)
@@ -1505,8 +1681,20 @@ for s in RAW_SHEETS:
 # Cost Master, 12_Suppliers PO Lines/Goods Receipt) source their lists
 # directly from the live Shopify staging tables, not a separate manual list —
 # this is what keeps master data integrated with the Shopify Data Model.
-NAMED_LIST_RANGES.append(("SKUList", "tbl_RAW_Variants", "SKU"))
-NAMED_LIST_RANGES.append(("CollectionTitleList", "tbl_RAW_Collections", "Title"))
+#
+# Deliberately "RAW_Variants"/"RAW_Collections", NOT "tbl_RAW_Variants"/
+# "tbl_RAW_Collections" (the Phase 1 placeholder table names still on these
+# sheets today): per power-query/README.md's setup steps, the placeholder
+# table gets DELETED and Power Query's "Load To Existing Worksheet" creates
+# a new table named after the QUERY (e.g. "RAW_Variants") once wired — so
+# this points at the table's PERMANENT post-wiring name. Every DAX measure
+# already assumes this same no-tbl_-prefix convention (dax/MEASURES.md).
+# Until Phase 2 is wired, these two named ranges (and everything that reads
+# them — Phase 3's SKU/Collection dropdowns, Phase 6's data-quality checks)
+# will show a broken reference — expected, same as every other "resolves
+# once wired" caveat in this workbook; wire Phase 2 before relying on them.
+NAMED_LIST_RANGES.append(("SKUList", "RAW_Variants", "SKU"))
+NAMED_LIST_RANGES.append(("CollectionTitleList", "RAW_Collections", "Title"))
 
 DIM_SHEETS = [
     dict(code="DIM_Date", pq="star-schema/DIM_Date.pq",
@@ -1644,6 +1832,15 @@ for s in LOG_SHEETS:
         headers=s["headers"],
     )
 
+# 14_Data_Quality's Historical Refresh Trend chart — deferred to here since
+# LOG_RefreshHistory (referenced below) only now exists. Over-provisioned to
+# row 500 since the log is append-only; Excel charts skip blank cells.
+_dq_ws = wb["14_Data_Quality"]
+_lrh_ws = wb["LOG_RefreshHistory"]
+_cats_ref_dq = Reference(_lrh_ws, min_col=3, max_col=3, min_row=13, max_row=500)  # Timestamp (C)
+_data_ref_dq = Reference(_lrh_ws, min_col=5, max_col=5, min_row=13, max_row=500)  # RowsLoaded (E)
+add_native_line_chart(_dq_ws, f"B{DQ_CHART_ANCHOR_ROW}", "Rows Loaded per Refresh", _cats_ref_dq, _data_ref_dq, height_cm=6, width_cm=15)
+
 
 # ============================================================================
 # Phase 5, item 6: Marketing-Ready Layer — empty tables + relationships for
@@ -1752,14 +1949,14 @@ ALERTS = [
     ("ALT-01", "Low Inventory", "Inventory Value below target", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Value]")<CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Target]")*0.5,"TRIGGERED","OK")', "Warning"),
     ("ALT-02", "Negative Margin", "Gross Margin % below 0", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Gross Margin %]")<0,"TRIGGERED","OK")', "Critical"),
     ("ALT-03", "Products without Cost", "Order lines with no matching Product Cost Master row", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")&" lines)","OK")', "Warning"),
-    ("ALT-04", "Products without SKU", "RAW_Variants rows with a blank SKU", '=IF(COUNTIFS(tbl_RAW_Variants[SKU],"")>0,"TRIGGERED","OK")', "Warning"),
+    ("ALT-04", "Products without SKU", "RAW_Variants rows with a blank SKU", '=IF(COUNTIFS(RAW_Variants[SKU],"")>0,"TRIGGERED","OK")', "Warning"),
     ("ALT-05", "Expenses without Category", "Manual Expenses rows with a blank Expense Category", '=IF(COUNTIFS(tbl_ManualExpenses[Expense Category],"")>0,"TRIGGERED","OK")', "Warning"),
     ("ALT-06", "Duplicate Expenses", "Manual Expenses flagged Possible Duplicate", '=IF(COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")>0,"TRIGGERED ("&COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")&")","OK")', "Info"),
     ("ALT-07", "Inactive Products", "Product Cost Master rows marked Inactive with no Active replacement", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")>0,"REVIEW — see Products without Cost above (same root cause)","OK")', "Info"),
     ("ALT-08", "Slow Moving Inventory", "SKUs below the Slow Moving threshold (dax/MEASURES.md)", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")&" SKUs)","OK")', "Info"),
     ("ALT-09", "Dead Stock", "SKUs with zero sales in 180 days while still holding stock", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")&" SKUs)","OK")', "Warning"),
     ("ALT-10", "Missing Shopify Sync", "No successful refresh recorded", '=IF(COUNTROWS_PLACEHOLDER<>0,"TRIGGERED","OK")', "Critical"),
-    ("ALT-11", "Refresh Errors", "LOG_DataQuality rows with a WARNING status this refresh", '=IF(COUNTIF(tbl_LOG_DataQuality[Status],"WARNING*")>0,"TRIGGERED","OK")', "Warning"),
+    ("ALT-11", "Refresh Errors", "LOG_DataQuality rows with a WARNING status this refresh", '=IF(COUNTIF(LOG_DataQuality[Status],"WARNING*")>0,"TRIGGERED","OK")', "Warning"),
     ("ALT-12", "Over Budget Expenses", "Operating Expenses exceed the Budget for the current period", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Operating Expenses]")>CUBEVALUE("ThisWorkbookDataModel","[Measures].[Expense Budget (Period)]"),"TRIGGERED","OK")', "Warning"),
 ]
 for i, (aid, name, cond, formula, sev) in enumerate(ALERTS):
@@ -1773,7 +1970,7 @@ for i, (aid, name, cond, formula, sev) in enumerate(ALERTS):
 # is append-only (Phase 2), so "no rows in the last 2 days" is the signal.
 # Column 5 = Status (the live formula column — see the per-row loop above).
 alt10_row = alert_row + 9
-ws.cell(row=alt10_row, column=5, value='=IF(COUNTIFS(tbl_LOG_RefreshHistory[Timestamp],">="&TODAY()-2)=0,"TRIGGERED","OK")')
+ws.cell(row=alt10_row, column=5, value='=IF(COUNTIFS(LOG_RefreshHistory[Timestamp],">="&TODAY()-2)=0,"TRIGGERED","OK")')
 
 
 # ============================================================================
@@ -1820,6 +2017,259 @@ for i, (label, measure) in enumerate(FORECAST_METRICS):
 
 
 # ============================================================================
+# Phase 6, item 3: Business Health Score — one master 0-100 KPI, weighted
+# from 10 components. Weights live on 15_Settings (tbl_HealthScoreWeights,
+# editable) so the business can rebalance without touching a formula. Two
+# components (Data Quality, Alerts) intentionally read worksheet tables
+# directly rather than CUBEVALUE — see dax/PHASE6_MEASURES_ADDENDUM.md for
+# why a pure-DAX measure couldn't reach them cleanly.
+# ============================================================================
+ws = build_hidden_sheet(
+    "BI_HealthScore", "bi",
+    purpose="The single master KPI (0-100, Red/Amber/Green) combining 10 weighted components across growth, profitability, cash, inventory, customers, budget, data quality, and alerts — the one number an executive glances at first.",
+    inputs="The Data Model (dax/MEASURES.md, PHASE5/6 addenda) via CUBEVALUE; 14_Data_Quality's Overall Data Quality %; BI_Alerts' Status column; tbl_HealthScoreWeights (15_Settings).",
+    outputs="02_Partner_Dashboard, 03_CEO_Dashboard, and RPT_ExecutiveBrief all reference this sheet's Total Score cell directly.",
+    relationships="No Data Model relationship — reads via CUBE functions and direct cell/table references, same mechanism as BI_Insights/BI_Alerts.",
+    future_source="Already live: resolves for real once the Data Model + measures are wired.",
+    headers=["Component", "Score (0-100)", "Weight", "Weighted Contribution"],
+)
+hs_row = ws.max_row + 2
+ws.cell(row=hs_row, column=2, value="COMPONENT SCORES  (formulas — do not edit; change weights on 15_Settings instead)").font = f(size=9, bold=True, color=C["text_gray"])
+hs_row += 1
+hs_data_row = hs_row
+HEALTH_COMPONENTS = [
+    ("Revenue Growth", 'MIN(100,MAX(0,50+CUBEVALUE("ThisWorkbookDataModel","[Measures].[Revenue Growth % (YoY)]")*250))'),
+    ("Gross Margin", 'MIN(100,MAX(0,IFERROR(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Gross Margin %]")/CUBEVALUE("ThisWorkbookDataModel","[Measures].[Margin Target]")*100,0)))'),
+    ("Cash Position", 'MIN(100,MAX(0,IFERROR(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Cash Position (Direct, Cumulative)]")/CUBEVALUE("ThisWorkbookDataModel","[Measures].[Expense Budget (Period)]")*100,0)))'),
+    ("Inventory Health", 'MIN(100,MAX(0,IFERROR(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Turnover]")/CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Turnover Target]")*100,0)))'),
+    ("Customer Growth", 'MIN(100,MAX(0,50+CUBEVALUE("ThisWorkbookDataModel","[Measures].[Customer Growth % (YoY)]")*250))'),
+    ("Repeat Customers", 'MIN(100,MAX(0,IFERROR(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Repeat Customer % Actual]")/CUBEVALUE("ThisWorkbookDataModel","[Measures].[Repeat Customer % Target]")*100,0)))'),
+    ("Return Rate", 'MIN(100,MAX(0,100-CUBEVALUE("ThisWorkbookDataModel","[Measures].[Return Rate %]")*1000))'),
+    ("Budget Performance", 'MIN(100,MAX(0,100-ABS(IFERROR(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Expense Actual vs Budget]")/CUBEVALUE("ThisWorkbookDataModel","[Measures].[Expense Budget (Period)]"),0))*100))'),
+    ("Data Quality", "MIN(100,MAX(0,OverallDataQualityPct*100))"),
+    ("Alerts", '=MIN(100,MAX(0,100-COUNTIF(\'BI_Alerts\'!E15:E26,"TRIGGERED*")*(100/12)))'),
+]
+for i, (comp, formula) in enumerate(HEALTH_COMPONENTS):
+    r = hs_data_row + i
+    ws.cell(row=r, column=2, value=comp).font = f(size=9, color=C["calc_body"])
+    score_formula = formula if formula.startswith("=") else f"={formula}"
+    sc = ws.cell(row=r, column=3, value=score_formula)
+    sc.font = f(size=9, bold=True, color=C["calc_body"])
+    sc.number_format = "0.0"
+    # Weight: pulled from tbl_HealthScoreWeights by matching Component name —
+    # plain worksheet formula (INDEX/MATCH, not DAX LOOKUPVALUE, since this
+    # is a worksheet, not a measure).
+    ws.cell(row=r, column=4, value=f'=INDEX(tbl_HealthScoreWeights[Weight],MATCH(B{r},tbl_HealthScoreWeights[Component],0))').font = f(size=9, color=C["calc_body"])
+    wcc = ws.cell(row=r, column=5, value=f'=C{r}*D{r}')
+    wcc.font = f(size=9, color=C["calc_body"])
+    wcc.number_format = "0.0"
+hs_end_row = hs_data_row + len(HEALTH_COMPONENTS) - 1
+row_total = hs_end_row + 2
+ws.cell(row=row_total, column=2, value="TOTAL BUSINESS HEALTH SCORE").font = f(size=12, bold=True, color=C["black"])
+total_formula = f'=SUM(E{hs_data_row}:E{hs_end_row})/SUM(D{hs_data_row}:D{hs_end_row})'
+total_cell = ws.cell(row=row_total, column=3, value=total_formula)
+total_cell.font = f(size=20, bold=True, color=C["black"])
+total_cell.number_format = "0.0"
+NAMED_RANGES.append(("BusinessHealthScore", "BI_HealthScore", f"$C${row_total}"))
+row_status = row_total + 1
+ws.cell(row=row_status, column=2, value="Status (Red < 50, Amber 50-75, Green > 75)").font = f(size=9, italic=True, color=C["text_gray"])
+status_formula = f'=IF(C{row_total}>75,"GREEN",IF(C{row_total}>=50,"AMBER","RED"))'
+status_cell = ws.cell(row=row_status, column=3, value=status_formula)
+status_cell.font = f(size=11, bold=True, color=C["calc_body"])
+NAMED_RANGES.append(("BusinessHealthStatus", "BI_HealthScore", f"$C${row_status}"))
+
+
+# ============================================================================
+# Phase 6, items 1-2: Daily Executive Brief + Automated Daily Report.
+# One sheet serves both — RPT_ExecutiveBrief is built print-ready (A4,
+# portrait, no dropdowns/interactive elements in the printable region) from
+# the start, rather than duplicating the same 13 metrics onto a second
+# sheet. See PHASE6_DOCUMENTATION.md for why. Hidden (per your placement
+# choice) — right-click any sheet tab > Unhide > RPT_ExecutiveBrief to view
+# or print; 01_Home also links to it directly.
+# "Biggest Increase/Decrease": scoped to overall Revenue vs Yesterday (a
+# single, reliable day-over-day delta) rather than a per-product "biggest
+# mover" ranking — CUBESET can't cleanly cross a date filter with a ranking
+# measure without an MDX pattern too advanced to verify in this environment.
+# "Top 5 Products/Collections": the SAME CUBESET/CUBERANKEDMEMBER measure
+# 02_Partner_Dashboard already uses, called again here — reusing the
+# measure, not re-deriving the logic, the same way the same KPI naturally
+# appears on more than one dashboard.
+# ============================================================================
+ws = wb.create_sheet("RPT_ExecutiveBrief")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 9)
+title_bar(ws, "Daily Executive Brief", last_col=10)
+row = doc_block(
+    ws,
+    "One-page, auto-summarized snapshot of today's business — printable as-is, no editing or slicers, suitable to hand a partner without walking them through the workbook.",
+    "The Data Model via CUBEVALUE/CUBESET; BI_HealthScore; BI_Alerts; BI_Insights.",
+    "A single printable A4 page.",
+    "Reads the Data Model and the BI_ sheets directly — this page computes nothing new itself.",
+    "Already live: resolves for real once the Data Model + measures are wired.",
+    last_col=10,
+)
+TODAY_YMD = 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[{m}]","[DIM_Date].[Year].&["&YEAR(TODAY())&"]","[DIM_Date].[Month].&["&MONTH(TODAY())&"]","[DIM_Date].[Day].&["&DAY(TODAY())&"]")'
+YEST_YMD = 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[{m}]","[DIM_Date].[Year].&["&YEAR(TODAY()-1)&"]","[DIM_Date].[Month].&["&MONTH(TODAY()-1)&"]","[DIM_Date].[Day].&["&DAY(TODAY()-1)&"]")'
+TODAY_CARDS = [
+    ("Revenue Today", TODAY_YMD.format(m="Net Sales"), "#,##0"),
+    ("Orders Today", TODAY_YMD.format(m="Order Count"), "#,##0"),
+    ("Gross Profit", TODAY_YMD.format(m="Gross Profit"), "#,##0"),
+    ("Margin %", TODAY_YMD.format(m="Gross Margin %"), "0.0%"),
+    ("Cash Position", 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[Cash Position (Direct, Cumulative)]")', "#,##0"),
+    ("Inventory Value", 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Value]")', "#,##0"),
+]
+brief_kpi_top = row
+for i, (label, formula, numfmt) in enumerate(TODAY_CARDS):
+    col = 2 + i
+    lab = ws.cell(row=brief_kpi_top, column=col, value=label.upper())
+    lab.font = f(size=8, bold=True, color=C["med_gray"])
+    lab.alignment = Alignment(vertical="bottom", horizontal="left", indent=1)
+
+    ws.merge_cells(start_row=brief_kpi_top + 1, start_column=col, end_row=brief_kpi_top + 2, end_column=col)
+    val = ws.cell(row=brief_kpi_top + 1, column=col, value=f"={formula}")
+    val.font = f(size=14, bold=True, color=C["white"])
+    val.number_format = numfmt
+    val.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+
+    for rr in (brief_kpi_top, brief_kpi_top + 1, brief_kpi_top + 2):
+        ws.cell(row=rr, column=col).fill = fill(C["kpi_fill"])
+row = brief_kpi_top + 4
+
+ws.cell(row=row, column=2, value="Revenue vs Yesterday").font = f(size=9, bold=True, color=C["text_gray"])
+row += 1
+vy_cell = ws.cell(row=row, column=2, value=f'=IFERROR({TODAY_YMD.format(m="Net Sales")}-{YEST_YMD.format(m="Net Sales")},0)')
+vy_cell.font = f(size=14, bold=True, color=C["calc_body"])
+vy_cell.number_format = "+#,##0;-#,##0;0"
+ws.cell(row=row, column=3, value='=IF(B' + str(row) + '>=0,"▲ Increase","▼ Decrease")').font = f(size=10, color=C["calc_body"])
+row += 2
+
+ws.cell(row=row, column=2, value="TOP 5 PRODUCTS").font = f(size=10, bold=True, color=C["text_gray"])
+ws.cell(row=row, column=7, value="TOP 5 COLLECTIONS").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+top_row_start = row
+row = add_cube_top_n(ws, top_row_start, 2, "Top 5 Products (Brief)", "DIM_Product", "Title", "Net Sales", n=5, ascending=False)
+add_cube_top_n(ws, top_row_start, 7, "Top 5 Collections (Brief)", "DIM_Collection", "Title", "Net Sales", n=5, ascending=False)
+row += 1
+
+ws.cell(row=row, column=2, value="CRITICAL ALERTS").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+# ALT-02 (Negative Margin) and ALT-10 (Missing Shopify Sync) are the only
+# two Severity="Critical" rows in BI_Alerts (rows 15-26) — referenced
+# directly rather than re-scanning the whole table on this page.
+for label, src in [("Negative Margin", 16), ("Missing Shopify Sync", 24)]:
+    ws.cell(row=row, column=2, value=label).font = f(size=9, color=C["text_gray"])
+    ws.cell(row=row, column=4, value=f"='BI_Alerts'!E{src}").font = f(size=9, bold=True, color=C["calc_body"])
+    row += 1
+row += 1
+
+ws.cell(row=row, column=2, value="BUSINESS HEALTH SCORE").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+hcell = ws.cell(row=row, column=2, value="=BusinessHealthScore")
+hcell.font = f(size=24, bold=True, color=C["black"])
+hcell.number_format = "0.0"
+ws.cell(row=row, column=4, value="=BusinessHealthStatus").font = f(size=14, bold=True, color=C["calc_body"])
+row += 2
+
+ws.cell(row=row, column=2, value="EXECUTIVE COMMENTARY").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+for i, src_row in enumerate([15, 16, 19, 20]):  # same curated 4 as 02_Partner_Dashboard
+    r = row + i
+    bullet = ws.cell(row=r, column=2, value=f"=\"•  \"&IFERROR('BI_Insights'!D{src_row},\"(resolves once Data Model is wired)\")")
+    bullet.font = f(size=9, color=C["text_gray"])
+    bullet.alignment = Alignment(wrap_text=True, vertical="top")
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=10)
+    ws.row_dimensions[r].height = 16
+row += 6
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.page_setup.orientation = "portrait"
+ws.page_setup.fitToWidth = 1
+ws.page_setup.fitToHeight = 1
+ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+ws.page_setup.paperSize = 9  # ECMA-376 paper-size code for A4 (openpyxl has no named constant for this)
+ws.print_area = f"A1:J{row}"
+ws.page_margins.left = ws.page_margins.right = 0.3
+ws.page_margins.top = ws.page_margins.bottom = 0.4
+ws.sheet_properties.tabColor = TAB_COLOR["bi"]
+ws.sheet_state = "hidden"
+
+
+# ============================================================================
+# Phase 6, item 5: Workflow Dashboard — one operational view spanning
+# Purchasing (12_Suppliers), Capital (11_Capital), and Expenses (10_Expenses)
+# territory, which is why it's its own sheet rather than appended to any one
+# of those (see PHASE6_DOCUMENTATION.md for the placement reasoning). Prefers
+# plain worksheet formulas against the Phase 3 manual tables (tbl_POHeader
+# etc. — these never get replaced by Power Query, unlike RAW_/LOG_, so the
+# tbl_ prefix is permanently correct here) and reuses existing DAX measures
+# via CUBEVALUE rather than inventing new "Capital Remaining"/"Outstanding
+# Expenses" concepts — both are just [Cash Position] and [Accounts Payable
+# (Proxy)] under a workflow-specific label.
+# ============================================================================
+ws = build_hidden_sheet(
+    "RPT_Workflow", "bi",
+    purpose="Operational workflow view: purchasing pipeline, order fulfillment status, supplier standing, and cash/expense runway — the day-to-day ops picture, distinct from the financial-statement framing of 08_Finance or the executive framing of the CEO Dashboard.",
+    inputs="tbl_POHeader/tbl_POLines/tbl_GoodsReceipt (12_Suppliers), tbl_SupplierMaster, RAW_Orders, the Data Model via CUBEVALUE.",
+    outputs="A single operational dashboard page.",
+    relationships="No new relationships — reads existing Phase 3 tables and Phase 4/5 measures directly.",
+    future_source="Already live: resolves for real once Power Query (Phase 2) and the Data Model (Phase 4) are wired.",
+    headers=["Metric", "Value", "Notes"],
+)
+wf_row = ws.max_row + 2
+ws.cell(row=wf_row, column=2, value="PURCHASING & RECEIVING").font = f(size=10, bold=True, color=C["text_gray"])
+wf_row += 1
+WORKFLOW_METRICS_1 = [
+    ("Purchase Orders (Total)", '=COUNTA(tbl_POHeader[PO Number])', "All POs ever entered, any status."),
+    ("Open Orders", '=COUNTIFS(RAW_Orders[FulfillmentStatus],"<>FULFILLED")', "Shopify orders not yet fully fulfilled."),
+    ("Pending Receipts", '=COUNTIFS(tbl_POHeader[Status],"Approved")+COUNTIFS(tbl_POHeader[Status],"Sent")+COUNTIFS(tbl_POHeader[Status],"Partially Received")', "POs Approved, Sent, or Partially Received — not yet fully in hand."),
+    ("Inventory to Receive (units)", '=SUM(tbl_GoodsReceipt[Remaining Quantity])', "Reuses Phase 3's own Remaining Quantity column (12_Suppliers) — not recomputed here."),
+    ("Monthly Purchasing (this month)", 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[Cash Paid for Purchases]")', "Current-period Cash Paid for Purchases (dax/MEASURES.md)."),
+]
+for i, (label, formula, note) in enumerate(WORKFLOW_METRICS_1):
+    r = wf_row + i
+    ws.cell(row=r, column=2, value=label).font = f(size=9, color=C["calc_body"])
+    vf = formula if formula.startswith("=") else f"={formula}"
+    ws.cell(row=r, column=3, value=vf).font = f(size=9, bold=True, color=C["calc_body"])
+    ws.cell(row=r, column=4, value=note).font = f(size=8, italic=True, color=C["text_gray"])
+wf_row += len(WORKFLOW_METRICS_1) + 2
+
+ws.cell(row=wf_row, column=2, value="SUPPLIER STATUS").font = f(size=10, bold=True, color=C["text_gray"])
+wf_row += 1
+for i, status in enumerate(["Active", "Inactive", "On Hold"]):
+    r = wf_row + i
+    ws.cell(row=r, column=2, value=status).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=3, value=f'=COUNTIFS(tbl_SupplierMaster[Status],"{status}")').font = f(size=9, bold=True, color=C["calc_body"])
+wf_row += 5
+
+ws.cell(row=wf_row, column=2, value="CASH & EXPENSES").font = f(size=10, bold=True, color=C["text_gray"])
+wf_row += 1
+WORKFLOW_METRICS_2 = [
+    ("Capital Remaining", 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[Cash Position (Direct, Cumulative)]")', "Same figure as Cash Position elsewhere — \"remaining\" is a workflow-page label, not a different calculation."),
+    ("Outstanding Expenses", 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[Accounts Payable (Proxy)]")', "Reuses the Balance Sheet's Accounts Payable proxy (dax/MEASURES.md §2) — same documented limitation applies (no payment-status field exists)."),
+]
+for i, (label, formula, note) in enumerate(WORKFLOW_METRICS_2):
+    r = wf_row + i
+    ws.cell(row=r, column=2, value=label).font = f(size=9, color=C["calc_body"])
+    vf = formula if formula.startswith("=") else f"={formula}"
+    ws.cell(row=r, column=3, value=vf).font = f(size=9, bold=True, color=C["calc_body"])
+    ws.cell(row=r, column=4, value=note).font = f(size=8, italic=True, color=C["text_gray"])
+wf_row += len(WORKFLOW_METRICS_2) + 2
+
+ws.cell(row=wf_row, column=2, value="MONTHLY PURCHASING — TRAILING 12 MONTHS").font = f(size=10, bold=True, color=C["text_gray"])
+wf_row += 1
+_, wf_value_row, wf_first_col, wf_last_col = add_cube_trend_table(ws, wf_row, 2, "Cash Paid for Purchases", n_months=12, label="Monthly Purchasing")
+wf_cats_ref = Reference(ws, min_col=wf_first_col, max_col=wf_last_col, min_row=wf_row + 1, max_row=wf_row + 1)
+wf_data_ref = Reference(ws, min_col=wf_first_col, max_col=wf_last_col, min_row=wf_value_row, max_row=wf_value_row)
+add_native_line_chart(ws, f"B{wf_row + 4}", "Monthly Purchasing — Trailing 12 Months", wf_cats_ref, wf_data_ref, height_cm=6, width_cm=15)
+
+# build_hidden_sheet() already froze panes, protected, colored the tab, and
+# hid this sheet — only print setup is new here.
+set_print_friendly(ws, last_col=15, last_row=80)
+
+
+# ============================================================================
 # Tab order (creation order did not match required order — fix explicitly)
 # ============================================================================
 VISIBLE_ORDER = [
@@ -1833,7 +2283,8 @@ HIDDEN_ORDER = (
     [s["code"] for s in FACT_SHEETS] +
     [s["code"] for s in LOG_SHEETS] +
     [s["code"] for s in MARKETING_SHEETS] + ["FACT_MarketingSpend"] +
-    ["FUTURE_AI_Insights", "BI_Insights", "BI_Alerts", "BI_Forecast"]
+    ["FUTURE_AI_Insights", "BI_Insights", "BI_Alerts", "BI_Forecast",
+     "BI_HealthScore", "RPT_ExecutiveBrief", "RPT_Workflow"]
 )
 FULL_ORDER = VISIBLE_ORDER + HIDDEN_ORDER
 assert sorted(FULL_ORDER) == sorted(wb.sheetnames), (

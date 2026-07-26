@@ -9,8 +9,21 @@
 // Range: 2023-01-01 through 2030-12-31 — covers the historical backfill
 // window with headroom. Extend EndDate if the business is still running
 // past 2030.
+//
+// PHASE 6 ADDITION (additive only — every column above this note is
+// unchanged from Phase 4): IsWorkingDay/IsHoliday/HolidayName, for the
+// Financial Calendar's Working Days / Business Days / Holiday Support.
+// IsWorkingDay defaults to Mon-Fri (adjust the DayOfWeek comparison below
+// if the business's week differs) minus any date listed on 15_Settings'
+// Holidays table (tbl_Holidays, empty by default — no holidays are
+// assumed). MTD/QTD/YTD/Rolling 12 Months/Previous Year/Same Period Last
+// Year do NOT need new columns here — they were already fully supported by
+// Phase 4's DAX time-intelligence measures (TOTALMTD/TOTALQTD/TOTALYTD/
+// DATESINPERIOD/SAMEPERIODLASTYEAR against this table's Date column); see
+// PHASE6_DOCUMENTATION.md for why those are reused, not rebuilt.
 // Output columns: DateKey, Date, Year, FiscalYear, Quarter, FiscalQuarter,
-//                  Month, MonthName, Week, Day, DayName, IsWeekend
+//                  Month, MonthName, Week, Day, DayName, IsWeekend,
+//                  IsWorkingDay, IsHoliday, HolidayName
 // -----------------------------------------------------------------------------
 let
     StartDate = #date(2023, 1, 1),
@@ -43,7 +56,15 @@ let
     AddIsWeekend = Table.AddColumn(AddDayName, "IsWeekend",
         each Date.DayOfWeek([Date], Day.Monday) >= 5, type logical),
 
-    Reordered = Table.SelectColumns(AddIsWeekend,
-        {"DateKey", "Date", "Year", "FiscalYear", "Quarter", "FiscalQuarter", "Month", "MonthName", "Week", "Day", "DayName", "IsWeekend"})
+    Holidays = try Excel.CurrentWorkbook(){[Name="tbl_Holidays"]}[Content] otherwise #table({"Date", "Holiday Name"}, {}),
+    HolidaysTyped = Table.TransformColumnTypes(Table.SelectRows(Holidays, each [Date] <> null and [Date] <> ""), {{"Date", type date}}),
+    WithHoliday = Table.NestedJoin(AddIsWeekend, {"Date"}, HolidaysTyped, {"Date"}, "HolidayInfo", JoinKind.LeftOuter),
+    ExpandedHoliday = Table.ExpandTableColumn(WithHoliday, "HolidayInfo", {"Holiday Name"}, {"HolidayName"}),
+    AddIsHoliday = Table.AddColumn(ExpandedHoliday, "IsHoliday", each [HolidayName] <> null, type logical),
+    AddIsWorkingDay = Table.AddColumn(AddIsHoliday, "IsWorkingDay", each not [IsWeekend] and not [IsHoliday], type logical),
+
+    Reordered = Table.SelectColumns(AddIsWorkingDay,
+        {"DateKey", "Date", "Year", "FiscalYear", "Quarter", "FiscalQuarter", "Month", "MonthName", "Week", "Day", "DayName",
+         "IsWeekend", "IsWorkingDay", "IsHoliday", "HolidayName"})
 in
     Reordered
