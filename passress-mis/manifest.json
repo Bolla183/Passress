@@ -33,11 +33,17 @@
     "DIM_Location",
     "DIM_Collection",
     "DIM_Parameters",
+    "DIM_Supplier",
+    "DIM_ProductCostHistory",
     "FACT_OrderLines",
     "FACT_Refunds",
     "FACT_InventoryMovements",
     "FACT_Payments",
     "FACT_ManualExpenses",
+    "FACT_CapitalTransactions",
+    "FACT_PurchaseOrderHeader",
+    "FACT_PurchaseOrderLines",
+    "FACT_GoodsReceipt",
     "LOG_RefreshHistory",
     "LOG_DataQuality"
   ],
@@ -98,26 +104,118 @@
       "cell": "$C$27"
     }
   ],
+  "named_list_ranges": [
+    {
+      "name": "LookupExpenseCategory",
+      "table": "tbl_LookupExpenseCategory",
+      "column": "Expense Category"
+    },
+    {
+      "name": "LookupExpenseSubcategory",
+      "table": "tbl_LookupExpenseSubcategory",
+      "column": "Expense Subcategory"
+    },
+    {
+      "name": "LookupCostCenter",
+      "table": "tbl_LookupCostCenter",
+      "column": "Cost Center"
+    },
+    {
+      "name": "LookupPaymentMethod",
+      "table": "tbl_LookupPaymentMethod",
+      "column": "Payment Method"
+    },
+    {
+      "name": "LookupCurrency",
+      "table": "tbl_LookupCurrency",
+      "column": "Currency"
+    },
+    {
+      "name": "LookupSupplierType",
+      "table": "tbl_LookupSupplierType",
+      "column": "Supplier Type"
+    },
+    {
+      "name": "LookupSupplierStatus",
+      "table": "tbl_LookupSupplierStatus",
+      "column": "Supplier Status"
+    },
+    {
+      "name": "LookupCapitalTransactionType",
+      "table": "tbl_LookupCapitalTransactionType",
+      "column": "Capital Transaction Type"
+    },
+    {
+      "name": "LookupPOStatus",
+      "table": "tbl_LookupPOStatus",
+      "column": "PO Status"
+    },
+    {
+      "name": "LookupWarehouse",
+      "table": "tbl_LookupWarehouse",
+      "column": "Warehouse"
+    },
+    {
+      "name": "LookupOwner",
+      "table": "tbl_LookupOwner",
+      "column": "Owner"
+    },
+    {
+      "name": "SupplierNameList",
+      "table": "tbl_SupplierMaster",
+      "column": "Supplier Name"
+    },
+    {
+      "name": "POHeaderList",
+      "table": "tbl_POHeader",
+      "column": "PO Number"
+    },
+    {
+      "name": "SKUList",
+      "table": "tbl_RAW_Variants",
+      "column": "SKU"
+    },
+    {
+      "name": "CollectionTitleList",
+      "table": "tbl_RAW_Collections",
+      "column": "Title"
+    }
+  ],
   "tables": [
+    {
+      "table": "tbl_ProductCostMaster",
+      "sheet": "05_Products",
+      "ref": "B44:S45"
+    },
     {
       "table": "tbl_ManualExpenses",
       "sheet": "10_Expenses",
-      "ref": "B17:H18"
+      "ref": "B17:R18"
     },
     {
       "table": "tbl_CapitalTransactions",
       "sheet": "11_Capital",
-      "ref": "B17:F18"
+      "ref": "B17:I18"
     },
     {
       "table": "tbl_SupplierMaster",
       "sheet": "12_Suppliers",
-      "ref": "B17:G18"
+      "ref": "B17:K18"
     },
     {
-      "table": "tbl_PurchaseOrders",
+      "table": "tbl_POHeader",
       "sheet": "12_Suppliers",
-      "ref": "B22:G23"
+      "ref": "B22:H23"
+    },
+    {
+      "table": "tbl_POLines",
+      "sheet": "12_Suppliers",
+      "ref": "B27:F28"
+    },
+    {
+      "table": "tbl_GoodsReceipt",
+      "sheet": "12_Suppliers",
+      "ref": "B32:J33"
     },
     {
       "table": "tbl_ValidationRules",
@@ -137,7 +235,62 @@
     {
       "table": "tbl_VersionLog",
       "sheet": "15_Settings",
-      "ref": "B36:E39"
+      "ref": "B36:E40"
+    },
+    {
+      "table": "tbl_LookupExpenseCategory",
+      "sheet": "15_Settings",
+      "ref": "B44:B54"
+    },
+    {
+      "table": "tbl_LookupExpenseSubcategory",
+      "sheet": "15_Settings",
+      "ref": "B56:B68"
+    },
+    {
+      "table": "tbl_LookupCostCenter",
+      "sheet": "15_Settings",
+      "ref": "B70:B75"
+    },
+    {
+      "table": "tbl_LookupPaymentMethod",
+      "sheet": "15_Settings",
+      "ref": "B77:B83"
+    },
+    {
+      "table": "tbl_LookupCurrency",
+      "sheet": "15_Settings",
+      "ref": "B85:B89"
+    },
+    {
+      "table": "tbl_LookupSupplierType",
+      "sheet": "15_Settings",
+      "ref": "B91:B99"
+    },
+    {
+      "table": "tbl_LookupSupplierStatus",
+      "sheet": "15_Settings",
+      "ref": "B101:B104"
+    },
+    {
+      "table": "tbl_LookupCapitalTransactionType",
+      "sheet": "15_Settings",
+      "ref": "B106:B108"
+    },
+    {
+      "table": "tbl_LookupPOStatus",
+      "sheet": "15_Settings",
+      "ref": "B110:B117"
+    },
+    {
+      "table": "tbl_LookupWarehouse",
+      "sheet": "15_Settings",
+      "ref": "B119:B122"
+    },
+    {
+      "table": "tbl_LookupOwner",
+      "sheet": "15_Settings",
+      "ref": "B124:B125"
     },
     {
       "table": "tbl_RAW_Orders",
@@ -220,6 +373,16 @@
       "ref": "B11:C12"
     },
     {
+      "table": "tbl_DIM_Supplier",
+      "sheet": "DIM_Supplier",
+      "ref": "B11:G12"
+    },
+    {
+      "table": "tbl_DIM_ProductCostHistory",
+      "sheet": "DIM_ProductCostHistory",
+      "ref": "B11:J12"
+    },
+    {
       "table": "tbl_FACT_OrderLines",
       "sheet": "FACT_OrderLines",
       "ref": "B11:O12"
@@ -242,6 +405,26 @@
     {
       "table": "tbl_FACT_ManualExpenses",
       "sheet": "FACT_ManualExpenses",
+      "ref": "B11:M12"
+    },
+    {
+      "table": "tbl_FACT_CapitalTransactions",
+      "sheet": "FACT_CapitalTransactions",
+      "ref": "B11:F12"
+    },
+    {
+      "table": "tbl_FACT_PurchaseOrderHeader",
+      "sheet": "FACT_PurchaseOrderHeader",
+      "ref": "B11:G12"
+    },
+    {
+      "table": "tbl_FACT_PurchaseOrderLines",
+      "sheet": "FACT_PurchaseOrderLines",
+      "ref": "B11:F12"
+    },
+    {
+      "table": "tbl_FACT_GoodsReceipt",
+      "sheet": "FACT_GoodsReceipt",
       "ref": "B11:I12"
     },
     {

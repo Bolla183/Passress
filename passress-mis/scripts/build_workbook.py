@@ -18,6 +18,8 @@ from openpyxl.worksheet.properties import WorksheetProperties, PageSetupProperti
 from openpyxl.worksheet.protection import SheetProtection
 from openpyxl.styles.protection import Protection
 from openpyxl.worksheet.dimensions import RowDimension
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.comments import Comment
 from openpyxl.formatting.rule import FormulaRule
 
 FONT_NAME = "Segoe UI"
@@ -71,6 +73,9 @@ TAB_COLOR = {
 
 wb = Workbook()
 wb.remove(wb.active)
+
+NAMED_RANGES = []       # (name, sheet, cell) -> single-cell named ranges (e.g. Settings parameters)
+NAMED_LIST_RANGES = []  # (name, table, column) -> table-column named ranges (e.g. dropdown list sources)
 
 # ------------------------------------------------------------- utilities --
 
@@ -249,6 +254,79 @@ def freeze_below_header(ws, row=11):
     ws.freeze_panes = ws.cell(row=row, column=1)
 
 
+# --------------------------------------------------- Phase 3: master data --
+
+def add_lookup_table(ws, table_name, top_row, top_col, header, values, list_name=None, width=18):
+    """Small single-column configurable lookup table (orange = Settings) used
+    as a dropdown source elsewhere. Registers a table-column named range
+    (list_name) so Data Validation can reference it as '=ListName'.
+    Returns next free row."""
+    style = CATEGORY_STYLE["settings"]
+    ws.column_dimensions[get_column_letter(top_col)].width = width
+    hcell = ws.cell(row=top_row, column=top_col, value=header)
+    hcell.font = f(size=9, bold=True, color=C["white"])
+    hcell.fill = fill(style["header_fill"])
+    hcell.border = BORDER_ALL
+    ws.row_dimensions[top_row].height = 16
+
+    for i, val in enumerate(values):
+        r = top_row + 1 + i
+        cell = ws.cell(row=r, column=top_col, value=val)
+        cell.font = f(size=9, color=style["body_font"])
+        cell.fill = fill(style["body_fill"])
+        cell.border = BORDER_ALL
+        cell.protection = Protection(locked=False)
+
+    end_row = top_row + len(values)
+    ref = f"{get_column_letter(top_col)}{top_row}:{get_column_letter(top_col)}{end_row}"
+    tbl = Table(displayName=table_name, ref=ref)
+    tbl.tableStyleInfo = TableStyleInfo(name="TableStyleLight1", showFirstColumn=False,
+                                         showLastColumn=False, showRowStripes=False, showColumnStripes=False)
+    ws.add_table(tbl)
+
+    if list_name:
+        NAMED_LIST_RANGES.append((list_name, table_name, header))
+    return end_row + 2
+
+
+def add_dropdown(ws, cell_range, list_name, title, prompt, error_title="Invalid entry", error_msg=None):
+    """Attaches list-based Data Validation (dropdown + input prompt + stop-on-error
+    message) to a column range, sourced from a named list range."""
+    dv = DataValidation(
+        type="list", formula1=f"={list_name}", allow_blank=True,
+        showDropDown=False,  # False = show the in-cell dropdown arrow (openpyxl's flag is inverted)
+        showInputMessage=True, showErrorMessage=True, errorStyle="stop",
+    )
+    dv.promptTitle = title[:32]
+    dv.prompt = prompt[:255]
+    dv.errorTitle = error_title[:32]
+    dv.error = (error_msg or f"Please choose a value from the {title} list — free text isn't accepted here.")[:255]
+    ws.add_data_validation(dv)
+    dv.add(cell_range)
+    return dv
+
+
+def extend_validation_down(ws, dv, cell_range):
+    """Adds an additional range to an existing DataValidation (e.g. future
+    rows below the current placeholder data)."""
+    dv.add(cell_range)
+
+
+def make_calc_column(ws, row, col, formula, numfmt=None, italic=False):
+    """Overwrites a cell inside an otherwise-green (input) table row with a
+    locked, gray-styled formula — for identifier/total/flag columns that are
+    computed, not typed, even though they live inside a manual-entry table."""
+    style = CATEGORY_STYLE["calc"]
+    cell = ws.cell(row=row, column=col, value=formula)
+    cell.font = f(size=9, color=style["body_font"], italic=italic)
+    cell.fill = fill(style["body_fill"])
+    cell.border = BORDER_ALL
+    cell.protection = Protection(locked=True)
+    if numfmt:
+        cell.number_format = numfmt
+    return cell
+
+
 # ============================================================================
 # 01_Home
 # ============================================================================
@@ -360,11 +438,11 @@ DASHBOARD_SHEETS = [
     ),
     dict(
         code="05_Products", title="Products",
-        purpose="Product-level performance — best sellers, margin by SKU, and variant performance.",
-        inputs="DIM_Product, FACT_OrderLines.",
-        outputs="Product KPI row, Top Products table, Product Margin table, Variant Detail table.",
-        relationships="DIM_Product links to FACT_OrderLines on ProductKey.",
-        future_source="RAW_Products / RAW_Variants via Power Query — Phase 2.",
+        purpose="Product-level performance dashboard placeholders (Phase 4) PLUS, as of Phase 3, the Product Cost Master — the workbook's historical/versioned SKU costing table.",
+        inputs="DIM_Product, FACT_OrderLines (Phase 4 dashboard). RAW_Variants, RAW_Collections (Phase 3 Product Cost Master dropdowns).",
+        outputs="Product KPI row, Top Products table, Product Margin table, Variant Detail table (Phase 4). tbl_ProductCostMaster feeding DIM_ProductCostHistory (Phase 3, live now).",
+        relationships="DIM_Product links to FACT_OrderLines on ProductKey (Phase 4). tbl_ProductCostMaster[SKU] links to RAW_Variants[SKU]; Phase 4's COGS calculation will further match SKU + order date against Effective From/To Date.",
+        future_source="RAW_Products / RAW_Variants via Power Query — Phase 2 (dashboard). Product Cost Master is manual entry today — see PHASE3_DOCUMENTATION.md §1.",
         kpis=["Active SKUs", "Best Seller", "Avg Margin %", "Slow Movers"],
         charts=["Top 10 Products (Chart)"],
         pivots=["Product Margin (PivotTable)", "Variant Detail (PivotTable)"],
@@ -426,6 +504,7 @@ DASHBOARD_SHEETS = [
     ),
 ]
 
+DASHBOARD_END_ROW = {}
 for spec in DASHBOARD_SHEETS:
     ws = wb.create_sheet(spec["code"])
     ws.sheet_view.showGridLines = False
@@ -438,79 +517,180 @@ for spec in DASHBOARD_SHEETS:
     row += 1
     chart_row = row
     for ch in spec["charts"]:
-        row = add_placeholder_box(ws, chart_row, 2, 10, 8, ch, phase="Phase 3")
+        row = add_placeholder_box(ws, chart_row, 2, 10, 8, ch, phase="Phase 4")
         chart_row = row
     row += 1
     ws.cell(row=row, column=2, value="DETAIL (PIVOTTABLES)").font = f(size=10, bold=True, color=C["text_gray"])
     row += 1
     piv_col = 2
     for pv in spec["pivots"]:
-        row2 = add_placeholder_box(ws, row, piv_col, 5, 10, pv, phase="Phase 3")
+        row2 = add_placeholder_box(ws, row, piv_col, 5, 10, pv, phase="Phase 4")
         piv_col += 5
         if piv_col > 10:
             piv_col = 2
             row = row2
+    row = max(row, row2) + 1
     freeze_below_header(ws)
     protect_ws(ws)
     ws.sheet_properties.tabColor = TAB_COLOR["dashboard"] if "Dashboard" in spec["title"] else TAB_COLOR["report"]
+    DASHBOARD_END_ROW[spec["code"]] = row
 
 
 # ============================================================================
-# 10_Expenses  — manual-entry sheet (green)
+# 05_Products — Phase 3 addition: Product Cost Master (historical costing)
+# Appended below the Phase 1 dashboard placeholders (untouched — those are
+# still Phase 4 work). This table is the only genuinely new master-data input
+# added to an existing dashboard-template sheet in Phase 3.
+# ============================================================================
+ws = wb["05_Products"]
+pcm_row = DASHBOARD_END_ROW["05_Products"] + 1
+ws.cell(row=pcm_row, column=2, value="PRODUCT COST MASTER  (Phase 3 — green cells = type here; Cost ID, Total Landed Cost, "
+        "Expected Gross Margin %, and the overlap warning are automatic)").font = f(size=12, bold=True, color=C["black"])
+pcm_row += 1
+ws.cell(row=pcm_row, column=2, value=(
+    "Historical costing: never edit or delete a past row when a cost changes — add a NEW row for the "
+    "new cost with its own Effective From Date, and set the OLD row's Effective To Date to the day "
+    "before and its Active Flag to Inactive. Phase 4's COGS calculation will match each order line to "
+    "the cost row whose SKU matches and whose Effective From/To range contains the order's date — so "
+    "past orders keep using the cost that was actually active when they happened, even after costs change."
+)).font = f(size=8, italic=True, color=C["text_gray"])
+ws.row_dimensions[pcm_row].height = 24
+pcm_row += 2
+
+pcm_header_row = pcm_row
+pcm_row = add_table(
+    ws, "tbl_ProductCostMaster", pcm_row, 2,
+    ["Cost ID", "SKU", "Product Name", "Variant", "Collection", "Fabric Cost", "Accessories Cost",
+     "Manufacturing Cost", "Packaging Cost", "Shipping Cost", "Other Cost", "Total Landed Cost",
+     "Selling Price", "Expected Gross Margin %", "Effective From Date", "Effective To Date",
+     "Active Flag", "Overlap Warning"],
+    "input",
+    example_row=["", "", "EXAMPLE — Amara Wrap Dress", "Black / M", "", 180, 25, 90, 15, 20, 0,
+                 "", 650, "", "2026-01-01", "", "Active", ""],
+)
+pcm_data_row = pcm_header_row + 1
+make_calc_column(ws, pcm_data_row, 2, f'="COST-"&TEXT(ROW()-{pcm_header_row},"00000")')
+make_calc_column(ws, pcm_data_row, 13,
+    '=SUM([@[Fabric Cost]],[@[Accessories Cost]],[@[Manufacturing Cost]],[@[Packaging Cost]],[@[Shipping Cost]],[@[Other Cost]])',
+    numfmt="#,##0.00")
+make_calc_column(ws, pcm_data_row, 15,
+    '=IF([@[Selling Price]]=0,"",([@[Selling Price]]-[@[Total Landed Cost]])/[@[Selling Price]])',
+    numfmt="0.0%")
+make_calc_column(ws, pcm_data_row, 19,
+    '=IF(COUNTIFS(tbl_ProductCostMaster[SKU],[@SKU],tbl_ProductCostMaster[Active Flag],"Active")>1,'
+    '"Multiple Active cost rows for this SKU — deactivate all but the current one","")')
+
+add_dropdown(ws, f"C{pcm_data_row}:C501", "SKUList", "SKU",
+             "Choose a live Shopify SKU.")
+add_dropdown(ws, f"F{pcm_data_row}:F501", "CollectionTitleList", "Collection",
+             "Choose a live Shopify collection.")
+active_flag_dv = DataValidation(type="list", formula1='"Active,Inactive"', allow_blank=True,
+                                 showDropDown=False, showInputMessage=True, showErrorMessage=True, errorStyle="stop")
+active_flag_dv.promptTitle = "Active Flag"
+active_flag_dv.prompt = "Only ONE row per SKU should be Active at a time — see the historical-costing note above."
+active_flag_dv.errorTitle = "Invalid entry"
+active_flag_dv.error = "Choose Active or Inactive."
+ws.add_data_validation(active_flag_dv)
+active_flag_dv.add(f"R{pcm_data_row}:R501")
+
+freeze_below_header(ws)
+
+
+# ============================================================================
+# 10_Expenses  — manual-entry sheet (green) — Phase 3: complete module
 # ============================================================================
 ws = wb.create_sheet("10_Expenses")
 ws.sheet_view.showGridLines = False
-set_col_widths(ws, [3, 12, 16, 16, 30, 12, 14, 12])
-title_bar(ws, "Expenses", last_col=8)
+set_col_widths(ws, [3] + [13, 12, 16, 16, 16, 11, 10, 13, 15, 12, 12, 20, 14, 14, 16, 18, 15])
+title_bar(ws, "Expenses", last_col=18)
 row = doc_block(
     ws,
-    "Operating expense tracking — the manual-entry source for costs that do not come from Shopify (rent, salaries, ad spend, shipping, etc.).",
-    "None — this sheet is the input. Category list validated against 15_Settings Chart of Accounts.",
-    "FACT_ManualExpenses (Data Model fact table).",
-    "Feeds the Data Model as its own fact table, kept structurally separate from Shopify-sourced facts so system-of-record vs. hand-entered data is always distinguishable. Categories map to 15_Settings!ChartOfAccounts.",
-    "This IS the source — no external system. Manual entry only.",
-    last_col=8,
+    "Complete operating-expense entry module — the manual-entry source for costs that do not come from Shopify (rent, salaries, ad spend, shipping, etc.), with category/subcategory lookups, optional SKU/Collection attribution, cost-center tagging, document references, and duplicate detection.",
+    "15_Settings lookup tables (Expense Category, Expense Subcategory, Payment Method, Currency, Cost Center), tbl_SupplierMaster (12_Suppliers), RAW_Variants / RAW_Collections (live Shopify SKUs/collections).",
+    "FACT_ManualExpenses (Data Model-ready hidden mirror).",
+    "Feeds the Data Model as its own fact table, kept structurally separate from Shopify-sourced facts so system-of-record vs. hand-entered data is always distinguishable. Related SKU/Collection dropdowns pull from the live Shopify RAW_ tables, not a separate manual list, so an expense can be tied to real product/collection data. Category list is fully configurable on 15_Settings — nothing is hardcoded.",
+    "This IS the source — no external system. Document Management: Invoice Number/File Name/File Path/Cloud Link are references only — see passress-mis/PHASE3_DOCUMENTATION.md; a future phase may connect Cloud Link directly to OneDrive/SharePoint.",
+    last_col=18,
 )
 row, _ = add_kpi_row(ws, row, ["Expenses MTD", "Expenses YTD", "Largest Category", "Budget Variance"], col_start=2, card_width=2)
 row += 1
-ws.cell(row=row, column=2, value="MANUAL EXPENSE ENTRY  (green cells = type here)").font = f(size=10, bold=True, color=C["text_gray"])
+ws.cell(row=row, column=2, value="MANUAL EXPENSE ENTRY  (green cells = type here — Expense ID and Possible Duplicate are automatic)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
+expenses_header_row = row
 row = add_table(
     ws, "tbl_ManualExpenses", row, 2,
-    ["Date", "Category", "Cost Center", "Description", "Amount (EGP)", "Payment Method", "Entered By"],
+    ["Expense ID", "Expense Date", "Expense Category", "Expense Subcategory", "Supplier", "Amount",
+     "Currency", "Payment Method", "Related Collection", "Related SKU", "Cost Center", "Notes",
+     "Invoice Number", "File Name", "File Path", "Cloud Link", "Possible Duplicate"],
     "input",
-    example_row=["2026-01-15", "Rent", "Head Office", "EXAMPLE — January office rent", 15000, "Bank Transfer", "Founder"],
+    example_row=["", "2026-01-15", "Rent", "Office", "", 15000, "EGP", "Bank Transfer", "", "",
+                 "Head Office", "EXAMPLE — January office rent", "INV-2026-0001", "jan-rent.pdf",
+                 "/Finance/2026/Rent/", "", ""],
 )
+exp_data_row = expenses_header_row + 1
+make_calc_column(ws, exp_data_row, 2, f'="EXP-"&TEXT(ROW()-{expenses_header_row},"00000")')
+make_calc_column(ws, exp_data_row, 18,
+    '=IF(COUNTIFS(tbl_ManualExpenses[Expense Date],[@[Expense Date]],tbl_ManualExpenses[Supplier],[@Supplier],tbl_ManualExpenses[Amount],[@Amount])>1,"Possible Duplicate","")')
+
+add_dropdown(ws, f"D{exp_data_row}:D501", "LookupExpenseCategory", "Expense Category",
+             "Choose from the Expense Category list on 15_Settings.")
+add_dropdown(ws, f"E{exp_data_row}:E501", "LookupExpenseSubcategory", "Expense Subcategory",
+             "Choose from the Expense Subcategory list on 15_Settings.")
+add_dropdown(ws, f"F{exp_data_row}:F501", "SupplierNameList", "Supplier",
+             "Choose from Supplier Master (12_Suppliers). Leave blank if this expense has no supplier.")
+add_dropdown(ws, f"H{exp_data_row}:H501", "LookupCurrency", "Currency",
+             "Choose from the Currency list on 15_Settings.")
+add_dropdown(ws, f"I{exp_data_row}:I501", "LookupPaymentMethod", "Payment Method",
+             "Choose from the Payment Method list on 15_Settings.")
+add_dropdown(ws, f"J{exp_data_row}:J501", "CollectionTitleList", "Related Collection (optional)",
+             "Choose a live Shopify collection, or leave blank.")
+add_dropdown(ws, f"K{exp_data_row}:K501", "SKUList", "Related SKU (optional)",
+             "Choose a live Shopify SKU, or leave blank.")
+add_dropdown(ws, f"L{exp_data_row}:L501", "LookupCostCenter", "Cost Center",
+             "Choose from the Cost Center list on 15_Settings.")
+
 freeze_below_header(ws)
 protect_ws(ws)
 ws.sheet_properties.tabColor = TAB_COLOR["input"]
 
 # ============================================================================
-# 11_Capital — manual-entry sheet (green)
+# 11_Capital — manual-entry sheet (green) — Phase 3: Owner/Transaction Type lookups
 # ============================================================================
 ws = wb.create_sheet("11_Capital")
 ws.sheet_view.showGridLines = False
-set_col_widths(ws, [3, 12, 16, 30, 14, 14])
-title_bar(ws, "Capital", last_col=6)
+set_col_widths(ws, [3, 14, 12, 14, 20, 14, 30, 14, 16])
+title_bar(ws, "Capital", last_col=9)
 row = doc_block(
     ws,
     "Tracks owner capital contributions and withdrawals, and the resulting owner-equity position.",
-    "None — this sheet is the input.",
-    "FACT_ManualExpenses-style capital ledger (own table) feeding the Data Model owner-equity measures.",
-    "The only source that grows/shrinks Capital Invested and Owner Equity on the dashboards.",
+    "15_Settings lookup tables (Owner, Capital Transaction Type).",
+    "FACT_CapitalTransactions (Data Model-ready hidden mirror).",
+    "The only source that grows/shrinks Capital Invested and Owner Equity in future financial calculations. Owner and Transaction Type are both configurable lookups on 15_Settings, not hardcoded.",
     "This IS the source — no external system. Manual entry only.",
-    last_col=6,
+    last_col=9,
 )
 row, _ = add_kpi_row(ws, row, ["Capital Invested", "Owner Withdrawals", "Net Owner Equity", "YTD Movement"], col_start=2, card_width=2)
 row += 1
-ws.cell(row=row, column=2, value="CAPITAL TRANSACTIONS  (green cells = type here)").font = f(size=10, bold=True, color=C["text_gray"])
+ws.cell(row=row, column=2, value="CAPITAL TRANSACTIONS  (green cells = type here — Capital ID and Possible Duplicate are automatic)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
+capital_header_row = row
 row = add_table(
     ws, "tbl_CapitalTransactions", row, 2,
-    ["Date", "Type (Contribution/Withdrawal)", "Description", "Amount (EGP)", "Entered By"],
+    ["Capital ID", "Date", "Owner", "Transaction Type", "Amount", "Notes", "Entered By", "Possible Duplicate"],
     "input",
-    example_row=["2026-01-01", "Contribution", "EXAMPLE — founder capital injection", 50000, "Founder"],
+    example_row=["", "2026-01-01", "Founder", "Capital Contribution", 50000,
+                 "EXAMPLE — founder capital injection", "Founder", ""],
 )
+capital_data_row = capital_header_row + 1
+make_calc_column(ws, capital_data_row, 2, f'="CAP-"&TEXT(ROW()-{capital_header_row},"00000")')
+make_calc_column(ws, capital_data_row, 9,
+    '=IF(COUNTIFS(tbl_CapitalTransactions[Date],[@Date],tbl_CapitalTransactions[Owner],[@Owner],tbl_CapitalTransactions[Amount],[@Amount])>1,"Possible Duplicate","")')
+
+add_dropdown(ws, f"D{capital_data_row}:D501", "LookupOwner", "Owner",
+             "Choose from the Owner list on 15_Settings.")
+add_dropdown(ws, f"E{capital_data_row}:E501", "LookupCapitalTransactionType", "Transaction Type",
+             "Capital Contribution or Capital Withdrawal — from the list on 15_Settings.")
+
 freeze_below_header(ws)
 protect_ws(ws)
 ws.sheet_properties.tabColor = TAB_COLOR["input"]
@@ -571,8 +751,6 @@ row = doc_block(
     "This IS the source. No external system.",
     last_col=4,
 )
-
-NAMED_RANGES = []  # (name, sheet, cell)
 
 def settings_table(ws, start_row, title, rows, name_prefix=None):
     ws.cell(row=start_row, column=2, value=title).font = f(size=10, bold=True, color=C["text_gray"])
@@ -659,6 +837,8 @@ VERSION_LOG_ROWS = [
      "01_Home's Workbook Version / Phase Completed KPI cards now read this table's last row live via formula — every future phase appends a row here and Home updates automatically."],
     ["2.0", "2026-07-26", "Phase 2 — Shopify GraphQL Ingestion Layer",
      "Complete Power Query M layer: authentication (Extension.CurrentCredential, no hardcoded tokens), automatic cursor pagination, incremental refresh, HTTP/GraphQL error handling with backoff. Covers Products, Variants, Orders, Order Lines, Customers, Collections, Inventory Levels, Transactions, Refunds, Discounts — read-only (GraphQL query operations only). Added RAW_Transactions and RAW_Discounts staging sheets; revised RAW_Refunds and RAW_InventoryLevels to match verified Shopify Admin API schema. See /passress-mis/power-query/README.md and DOCUMENTATION.md. No dashboards yet."],
+    ["3.0", "2026-07-26", "Phase 3 — Business Master Data & Manual-Entry Engine",
+     "Product Cost Master with historical/versioned costing (05_Products). Complete Manual Expenses module: category/subcategory lookups, duplicate-flag column, document references (10_Expenses). Capital module (11_Capital). Expanded Supplier Master + full Purchase Order engine — Header/Lines/Goods Receipt with a Draft-to-Closed status workflow (12_Suppliers). Every dropdown sourced from an editable lookup table on 15_Settings — no hardcoded values — with input prompts and stop-on-error messages. SKU/Collection dropdowns reference the live Shopify RAW_ tables, not a separate manual list. New hidden Data-Model-ready mirrors: DIM_Supplier, DIM_ProductCostHistory, FACT_CapitalTransactions, FACT_PurchaseOrderHeader, FACT_PurchaseOrderLines, FACT_GoodsReceipt. See /passress-mis/PHASE3_DOCUMENTATION.md. Still no dashboards, PivotTables, DAX, or financial statements."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
@@ -667,6 +847,42 @@ row = add_table(
     "calc",
     data_rows=VERSION_LOG_ROWS,
 )
+row += 1
+
+# --- Master data lookup tables (Phase 3) -----------------------------------
+# Every dropdown elsewhere in the workbook sources its list from one of these
+# tables via a named range — never a hardcoded Excel list. Add/remove rows
+# here and every dropdown that uses it updates automatically.
+ws.cell(row=row, column=2, value="MASTER DATA LOOKUP TABLES  (orange cells = configurable — edit freely, every dropdown in the workbook reads from here)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+
+LOOKUPS = [
+    ("tbl_LookupExpenseCategory", "Expense Category", "LookupExpenseCategory",
+     ["Rent", "Utilities", "Salaries", "Marketing", "Shipping & Logistics", "Packaging",
+      "Software & Subscriptions", "Professional Fees", "Bank Charges", "Other"]),
+    ("tbl_LookupExpenseSubcategory", "Expense Subcategory", "LookupExpenseSubcategory",
+     ["General", "Office", "Warehouse", "Online Ads", "Influencer", "Photography", "Courier",
+      "Customs & Duties", "Software License", "Legal", "Accounting", "Other"]),
+    ("tbl_LookupCostCenter", "Cost Center", "LookupCostCenter",
+     ["Head Office", "Warehouse", "E-Commerce", "Marketing", "Production"]),
+    ("tbl_LookupPaymentMethod", "Payment Method", "LookupPaymentMethod",
+     ["Bank Transfer", "Cash", "Credit Card", "Instapay", "Cheque", "Other"]),
+    ("tbl_LookupCurrency", "Currency", "LookupCurrency", ["EGP", "USD", "EUR", "GBP"]),
+    ("tbl_LookupSupplierType", "Supplier Type", "LookupSupplierType",
+     ["Fabric", "Accessories", "Manufacturing", "Packaging", "Logistics",
+      "Marketing Agency", "Software Vendor", "Other"]),
+    ("tbl_LookupSupplierStatus", "Supplier Status", "LookupSupplierStatus",
+     ["Active", "Inactive", "On Hold"]),
+    ("tbl_LookupCapitalTransactionType", "Capital Transaction Type", "LookupCapitalTransactionType",
+     ["Capital Contribution", "Capital Withdrawal"]),
+    ("tbl_LookupPOStatus", "PO Status", "LookupPOStatus",
+     ["Draft", "Approved", "Sent", "Partially Received", "Received", "Closed", "Cancelled"]),
+    ("tbl_LookupWarehouse", "Warehouse", "LookupWarehouse",
+     ["Main Warehouse", "Retail Store", "Third-Party Logistics"]),
+    ("tbl_LookupOwner", "Owner", "LookupOwner", ["Founder"]),
+]
+for table_name, header, list_name, values in LOOKUPS:
+    row = add_lookup_table(ws, table_name, row, 2, header, values, list_name=list_name)
 
 freeze_below_header(ws)
 protect_ws(ws)
@@ -674,40 +890,111 @@ ws.sheet_properties.tabColor = TAB_COLOR["report"]
 
 
 # ============================================================================
-# 12_Suppliers — manual-entry sheet (green)
+# 12_Suppliers — manual-entry sheet (green) — Phase 3: Supplier Master +
+# complete Purchase Order engine (Header / Lines / Goods Receipt)
 # ============================================================================
 ws = wb.create_sheet("12_Suppliers")
 ws.sheet_view.showGridLines = False
-set_col_widths(ws, [3, 14, 20, 16, 16, 12, 14])
-title_bar(ws, "Suppliers", last_col=7)
+set_col_widths(ws, [3] + [14, 20, 14, 14, 22, 10, 16, 12, 26])
+title_bar(ws, "Suppliers", last_col=10)
 row = doc_block(
     ws,
-    "Supplier master data and purchase order tracking.",
-    "None — this sheet is the input.",
-    "Supplier master table, Purchase Order log — future Data Model facts (FACT_Purchases).",
-    "Purchase Order log will link to DIM_Product once SKU-level purchasing is tracked (Phase 3+).",
-    "This IS the source today. Candidate for supplier-portal or accounting-system integration later (see Future Integrations).",
-    last_col=7,
+    "Supplier master data and the complete purchasing engine: Purchase Order Header, Purchase Order Lines, and Goods Receipt, with a Draft-through-Closed status workflow.",
+    "15_Settings lookup tables (Supplier Type, Supplier Status, Currency, PO Status, Warehouse), RAW_Variants (live Shopify SKUs).",
+    "DIM_Supplier, FACT_PurchaseOrderHeader, FACT_PurchaseOrderLines, FACT_GoodsReceipt (Data Model-ready hidden mirrors).",
+    "PO Lines and Goods Receipt both key on PO Number (from PO Header) and SKU (from the live Shopify variant list), not a separate manual product list. Goods Receipt's Remaining Quantity and Variance from PO are computed by looking up PO Lines for the same PO Number + SKU.",
+    "This IS the source today. Candidate for supplier-portal or accounting-system integration later (see Future Integrations in the Phase 0 architecture).",
+    last_col=10,
 )
-row, _ = add_kpi_row(ws, row, ["Active Suppliers", "Purchases YTD", "Avg Lead Time", "Outstanding Payables"], col_start=2, card_width=2)
+row, _ = add_kpi_row(ws, row, ["Active Suppliers", "Open POs", "Purchases YTD", "Outstanding Receipts"], col_start=2, card_width=2)
 row += 1
-ws.cell(row=row, column=2, value="SUPPLIER MASTER  (green cells = type here)").font = f(size=10, bold=True, color=C["text_gray"])
+
+# --- Supplier Master --------------------------------------------------------
+ws.cell(row=row, column=2, value="SUPPLIER MASTER  (green cells = type here — Supplier ID is automatic)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
+supplier_header_row = row
 row = add_table(
     ws, "tbl_SupplierMaster", row, 2,
-    ["Supplier ID", "Supplier Name", "Contact", "Category", "Lead Time (Days)", "Status"],
+    ["Supplier ID", "Supplier Name", "Supplier Type", "Contact Person", "Phone", "Email",
+     "Currency", "Payment Terms", "Status", "Notes"],
     "input",
-    example_row=["SUP-001", "EXAMPLE — ABC Textiles", "contact@example.com", "Fabric", 14, "Active"],
+    example_row=["", "EXAMPLE — ABC Textiles", "Fabric", "Mona Ahmed", "+20 100 000 0000",
+                 "contact@example.com", "EGP", "Net 30", "Active", ""],
 )
+supplier_data_row = supplier_header_row + 1
+make_calc_column(ws, supplier_data_row, 2, f'="SUP-"&TEXT(ROW()-{supplier_header_row},"00000")')
+add_dropdown(ws, f"D{supplier_data_row}:D501", "LookupSupplierType", "Supplier Type",
+             "Choose from the Supplier Type list on 15_Settings.")
+add_dropdown(ws, f"H{supplier_data_row}:H501", "LookupCurrency", "Currency",
+             "Choose from the Currency list on 15_Settings.")
+add_dropdown(ws, f"J{supplier_data_row}:J501", "LookupSupplierStatus", "Status",
+             "Choose from the Supplier Status list on 15_Settings.")
+NAMED_LIST_RANGES.append(("SupplierNameList", "tbl_SupplierMaster", "Supplier Name"))
 row += 1
-ws.cell(row=row, column=2, value="PURCHASE ORDER LOG  (green cells = type here)").font = f(size=10, bold=True, color=C["text_gray"])
+
+# --- Purchase Order Header ---------------------------------------------------
+ws.cell(row=row, column=2, value="PURCHASE ORDER HEADER  (green cells = type here — PO Number is automatic)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
+poh_header_row = row
 row = add_table(
-    ws, "tbl_PurchaseOrders", row, 2,
-    ["PO Number", "Supplier ID", "Date", "Amount (EGP)", "Status", "Expected Delivery"],
+    ws, "tbl_POHeader", row, 2,
+    ["PO Number", "Supplier", "Order Date", "Expected Delivery Date", "Status", "Currency", "Notes"],
     "input",
-    example_row=["PO-2026-001", "SUP-001", "2026-01-10", 20000, "Ordered", "2026-01-24"],
+    example_row=["", "EXAMPLE — ABC Textiles", "2026-01-10", "2026-01-24", "Draft", "EGP", ""],
 )
+poh_data_row = poh_header_row + 1
+make_calc_column(ws, poh_data_row, 2, f'="PO-"&TEXT(ROW()-{poh_header_row},"00000")')
+add_dropdown(ws, f"C{poh_data_row}:C501", "SupplierNameList", "Supplier",
+             "Choose from Supplier Master (this sheet, above).")
+add_dropdown(ws, f"F{poh_data_row}:F501", "LookupPOStatus", "Status",
+             "Draft → Approved → Sent → Partially Received → Received → Closed, or Cancelled at any point.")
+add_dropdown(ws, f"G{poh_data_row}:G501", "LookupCurrency", "Currency",
+             "Choose from the Currency list on 15_Settings.")
+NAMED_LIST_RANGES.append(("POHeaderList", "tbl_POHeader", "PO Number"))
+row += 1
+
+# --- Purchase Order Lines ----------------------------------------------------
+ws.cell(row=row, column=2, value="PURCHASE ORDER LINES  (green cells = type here — Total Cost is automatic)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+pol_header_row = row
+row = add_table(
+    ws, "tbl_POLines", row, 2,
+    ["PO Number", "SKU", "Quantity Ordered", "Unit Cost", "Total Cost"],
+    "input",
+    example_row=["", "", 50, 120, ""],
+)
+pol_data_row = pol_header_row + 1
+make_calc_column(ws, pol_data_row, 6, '=[@[Quantity Ordered]]*[@[Unit Cost]]')
+add_dropdown(ws, f"B{pol_data_row}:B501", "POHeaderList", "PO Number",
+             "Choose an existing PO Number from Purchase Order Header, above.")
+add_dropdown(ws, f"C{pol_data_row}:C501", "SKUList", "SKU",
+             "Choose a live Shopify SKU.")
+row += 1
+
+# --- Goods Receipt ------------------------------------------------------------
+ws.cell(row=row, column=2, value="GOODS RECEIPT  (green cells = type here — Remaining Quantity and Variance from PO are automatic)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+gr_header_row = row
+row = add_table(
+    ws, "tbl_GoodsReceipt", row, 2,
+    ["PO Number", "SKU", "Goods Received Date", "Quantity Received", "Remaining Quantity",
+     "Actual Unit Cost", "Variance from PO", "Warehouse", "Receiver"],
+    "input",
+    example_row=["", "", "2026-01-20", 30, "", 122, "", "Main Warehouse", ""],
+)
+gr_data_row = gr_header_row + 1
+make_calc_column(ws, gr_data_row, 6,
+    '=SUMIFS(tbl_POLines[Quantity Ordered],tbl_POLines[PO Number],[@[PO Number]],tbl_POLines[SKU],[@SKU])'
+    '-SUMIFS(tbl_GoodsReceipt[Quantity Received],tbl_GoodsReceipt[PO Number],[@[PO Number]],tbl_GoodsReceipt[SKU],[@SKU])')
+make_calc_column(ws, gr_data_row, 8,
+    '=[@[Actual Unit Cost]]-SUMIFS(tbl_POLines[Unit Cost],tbl_POLines[PO Number],[@[PO Number]],tbl_POLines[SKU],[@SKU])')
+add_dropdown(ws, f"B{gr_data_row}:B501", "POHeaderList", "PO Number",
+             "Choose an existing PO Number from Purchase Order Header, above.")
+add_dropdown(ws, f"C{gr_data_row}:C501", "SKUList", "SKU",
+             "Choose a live Shopify SKU.")
+add_dropdown(ws, f"I{gr_data_row}:I501", "LookupWarehouse", "Warehouse",
+             "Choose from the Warehouse list on 15_Settings.")
+
 freeze_below_header(ws)
 protect_ws(ws)
 ws.sheet_properties.tabColor = TAB_COLOR["input"]
@@ -779,6 +1066,13 @@ for s in RAW_SHEETS:
         headers=s["headers"],
     )
 
+# Phase 3 dropdowns (10_Expenses Related SKU/Collection, 05_Products Product
+# Cost Master, 12_Suppliers PO Lines/Goods Receipt) source their lists
+# directly from the live Shopify staging tables, not a separate manual list —
+# this is what keeps master data integrated with the Shopify Data Model.
+NAMED_LIST_RANGES.append(("SKUList", "tbl_RAW_Variants", "SKU"))
+NAMED_LIST_RANGES.append(("CollectionTitleList", "tbl_RAW_Collections", "Title"))
+
 DIM_SHEETS = [
     dict(code="DIM_Date", headers=["DateKey", "Date", "Year", "FiscalYear", "Quarter", "Month", "MonthName",
                                     "Week", "Day", "DayName", "IsWeekend"]),
@@ -789,21 +1083,47 @@ DIM_SHEETS = [
     dict(code="DIM_Location", headers=["LocationKey", "LocationID", "LocationName", "City", "Country"]),
     dict(code="DIM_Collection", headers=["CollectionKey", "CollectionID", "Title", "Handle"]),
     dict(code="DIM_Parameters", headers=["ParameterName", "ParameterValue"]),
+    # --- Phase 3 additions: mirrors of new manual master-data sheets ---
+    dict(code="DIM_Supplier", mirror_of="12_Suppliers (Supplier Master table)",
+         headers=["SupplierKey", "SupplierID", "SupplierName", "SupplierType", "Currency", "Status"]),
+    dict(code="DIM_ProductCostHistory", mirror_of="05_Products (Product Cost Master table)",
+         headers=["CostKey", "SKU", "Collection", "TotalLandedCost", "SellingPrice", "ExpectedGrossMarginPct",
+                   "EffectiveFromDate", "EffectiveToDate", "ActiveFlag"]),
 ]
 for s in DIM_SHEETS:
     is_params = s["code"] == "DIM_Parameters"
+    mirror_of = s.get("mirror_of")
     build_hidden_sheet(
         s["code"], "dim",
         purpose=(
             "Disconnected mirror of 15_Settings, used so DAX measures can reference configurable "
             "constants without creating a relationship into the star schema."
             if is_params else
+            f"Data Model-ready mirror of {mirror_of}, time-variant (Effective From/To + Active Flag preserved) "
+            "so Phase 4 can join each order line to the cost that was active on the order's date."
+            if mirror_of == "05_Products (Product Cost Master table)" else
+            f"Data Model-ready mirror of {mirror_of}."
+            if mirror_of else
             f"Dimension table for the star schema — describes the '{s['code'].replace('DIM_', '')}' entity that FACT_ tables relate to."
         ),
-        inputs="15_Settings (linked manually / via Power Query, Phase 2)." if is_params else "Derived from the matching RAW_ staging table(s).",
+        inputs=(
+            "15_Settings (linked manually / via Power Query, Phase 2)." if is_params else
+            f"{mirror_of.split(' (')[0]}'s master-data table." if mirror_of else
+            "Derived from the matching RAW_ staging table(s)."
+        ),
         outputs="Referenced by DAX measures across all dashboards." if is_params else "Related to FACT_ tables in the Data Model (one-to-many).",
-        relationships="N/A — disconnected table by design." if is_params else "One-to-many into the relevant FACT_ table(s) on this dimension's key column.",
-        future_source="Manual link to 15_Settings — Phase 3." if is_params else "Built from RAW_ staging data in Power Query — Phase 2/3.",
+        relationships=(
+            "N/A — disconnected table by design." if is_params else
+            "SKU relates to FACT_OrderLines; EffectiveFromDate/EffectiveToDate bound which cost row applies to a given order date (Phase 4 DAX)."
+            if s["code"] == "DIM_ProductCostHistory" else
+            "SupplierID relates to FACT_PurchaseOrderHeader (one-to-many)." if s["code"] == "DIM_Supplier" else
+            "One-to-many into the relevant FACT_ table(s) on this dimension's key column."
+        ),
+        future_source=(
+            "Manual link to 15_Settings — Phase 3." if is_params else
+            f"Load {mirror_of.split(' (')[0]}'s table into this mirror — Phase 4 (Data Model wiring)." if mirror_of else
+            "Built from RAW_ staging data in Power Query — Phase 2/3."
+        ),
         headers=s["headers"],
     )
 
@@ -820,26 +1140,38 @@ FACT_SHEETS = [
     dict(code="FACT_Payments", category="calc",
          headers=["PaymentKey", "OrderID", "DateKey", "PaymentMethod", "Currency", "Amount",
                    "PresentmentAmount"]),
-    dict(code="FACT_ManualExpenses", category="input",
-         headers=["ExpenseKey", "Date", "Category", "CostCenter", "Description", "Amount", "PaymentMethod",
-                   "EnteredBy"]),
+    dict(code="FACT_ManualExpenses", category="input", mirror_of="10_Expenses",
+         headers=["ExpenseKey", "ExpenseDate", "ExpenseCategory", "ExpenseSubcategory", "SupplierID",
+                   "Amount", "Currency", "PaymentMethod", "RelatedCollection", "RelatedSKU", "CostCenter",
+                   "InvoiceNumber"]),
+    # --- Phase 3 additions: mirrors of new manual master-data sheets ---
+    dict(code="FACT_CapitalTransactions", category="input", mirror_of="11_Capital",
+         headers=["CapitalKey", "Date", "Owner", "TransactionType", "Amount"]),
+    dict(code="FACT_PurchaseOrderHeader", category="input", mirror_of="12_Suppliers (PO Header table)",
+         headers=["PONumber", "SupplierID", "OrderDate", "ExpectedDeliveryDate", "Status", "Currency"]),
+    dict(code="FACT_PurchaseOrderLines", category="input", mirror_of="12_Suppliers (PO Lines table)",
+         headers=["PONumber", "SKU", "QuantityOrdered", "UnitCost", "TotalCost"]),
+    dict(code="FACT_GoodsReceipt", category="input", mirror_of="12_Suppliers (Goods Receipt table)",
+         headers=["PONumber", "SKU", "GoodsReceivedDate", "QuantityReceived", "RemainingQuantity",
+                   "ActualUnitCost", "VarianceFromPO", "Warehouse"]),
 ]
 for s in FACT_SHEETS:
     manual = s["category"] == "input"
+    mirror_of = s.get("mirror_of", "10_Expenses")
     ws = wb.create_sheet(s["code"])
     ws.sheet_view.showGridLines = False
     set_col_widths(ws, [3] + [16] * len(s["headers"]))
     title_bar(ws, s["code"], last_col=len(s["headers"]) + 1)
     row = doc_block(
         ws,
-        ("Manually entered operating-expense fact, kept structurally separate from Shopify-sourced facts. "
-         "Mirrors the input table on 10_Expenses — this is the Data Model-ready version of it."
+        (f"Manually entered fact, kept structurally separate from Shopify-sourced facts. Mirrors the input "
+         f"table(s) on {mirror_of} — this is the Data Model-ready version of it."
          if manual else
          f"Fact table for the star schema — transaction-level grain, built from RAW_ staging data plus dimension keys."),
-        "10_Expenses manual entry table." if manual else "RAW_ staging tables + DIM_ key lookups.",
+        f"{mirror_of} manual entry table(s)." if manual else "RAW_ staging tables + DIM_ key lookups.",
         "Referenced by DAX measures across 08_Finance, 09_Profitability, 02/03 dashboards." if manual else "Referenced by DAX measures across all dashboards.",
-        "Grain: one row per expense entry." if manual else "Many-to-one into each related DIM_ table.",
-        "10_Expenses (already the source of truth — no external system)." if manual else "Built in Power Query from RAW_ + DIM_ — Phase 2/3.",
+        "Grain matches its source table on the visible sheet, one-for-one." if manual else "Many-to-one into each related DIM_ table.",
+        f"{mirror_of} (already the source of truth — no external system). Loaded into this mirror in Phase 4 (Data Model wiring)." if manual else "Built in Power Query from RAW_ + DIM_ — Phase 2/3.",
         last_col=len(s["headers"]) + 1,
     )
     add_table(ws, "tbl_" + s["code"], row, 2, s["headers"], s["category"])
@@ -902,6 +1234,9 @@ for name, sheet, cell in NAMED_RANGES:
     ref = f"'{sheet}'!{cell}"
     wb.defined_names[name] = DefinedName(name, attr_text=ref)
 
+for name, table, column in NAMED_LIST_RANGES:
+    wb.defined_names[name] = DefinedName(name, attr_text=f"={table}[{column}]")
+
 # ============================================================================
 # Workbook-level structure protection
 # ============================================================================
@@ -919,6 +1254,7 @@ manifest = {
     "visible_sheets": VISIBLE_ORDER,
     "hidden_sheets": HIDDEN_ORDER,
     "named_ranges": [{"name": n, "sheet": s, "cell": c} for n, s, c in NAMED_RANGES],
+    "named_list_ranges": [{"name": n, "table": t, "column": c} for n, t, c in NAMED_LIST_RANGES],
     "tables": [],
 }
 for sheet_name in wb.sheetnames:
@@ -933,4 +1269,4 @@ with open(manifest_path, "w") as fh:
 print(f"Saved workbook: {OUT_PATH}")
 print(f"Sheets: {len(wb.sheetnames)}  ({len(VISIBLE_ORDER)} visible, {len(HIDDEN_ORDER)} hidden)")
 print(f"Tables: {len(manifest['tables'])}")
-print(f"Named ranges: {len(NAMED_RANGES)}")
+print(f"Named ranges: {len(NAMED_RANGES)} single-cell + {len(NAMED_LIST_RANGES)} list/table")
