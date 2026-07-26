@@ -251,12 +251,12 @@
     },
     {
       "name": "SKUList",
-      "table": "RAW_Variants",
+      "table": "tbl_RAW_Variants",
       "column": "SKU"
     },
     {
       "name": "CollectionTitleList",
-      "table": "RAW_Collections",
+      "table": "tbl_RAW_Collections",
       "column": "Title"
     }
   ],
@@ -324,92 +324,92 @@
     {
       "table": "tbl_VersionLog",
       "sheet": "15_Settings",
-      "ref": "B36:E45"
+      "ref": "B36:E46"
     },
     {
       "table": "tbl_LookupExpenseCategory",
       "sheet": "15_Settings",
-      "ref": "B49:B59"
+      "ref": "B50:B60"
     },
     {
       "table": "tbl_LookupExpenseSubcategory",
       "sheet": "15_Settings",
-      "ref": "B61:B73"
+      "ref": "B62:B74"
     },
     {
       "table": "tbl_LookupCostCenter",
       "sheet": "15_Settings",
-      "ref": "B75:B80"
+      "ref": "B76:B81"
     },
     {
       "table": "tbl_LookupPaymentMethod",
       "sheet": "15_Settings",
-      "ref": "B82:B88"
+      "ref": "B83:B89"
     },
     {
       "table": "tbl_LookupCurrency",
       "sheet": "15_Settings",
-      "ref": "B90:B94"
+      "ref": "B91:B95"
     },
     {
       "table": "tbl_LookupSupplierType",
       "sheet": "15_Settings",
-      "ref": "B96:B104"
+      "ref": "B97:B105"
     },
     {
       "table": "tbl_LookupSupplierStatus",
       "sheet": "15_Settings",
-      "ref": "B106:B109"
+      "ref": "B107:B110"
     },
     {
       "table": "tbl_LookupCapitalTransactionType",
       "sheet": "15_Settings",
-      "ref": "B111:B113"
+      "ref": "B112:B114"
     },
     {
       "table": "tbl_LookupPOStatus",
       "sheet": "15_Settings",
-      "ref": "B115:B122"
+      "ref": "B116:B123"
     },
     {
       "table": "tbl_LookupWarehouse",
       "sheet": "15_Settings",
-      "ref": "B124:B127"
+      "ref": "B125:B128"
     },
     {
       "table": "tbl_LookupOwner",
       "sheet": "15_Settings",
-      "ref": "B129:B130"
+      "ref": "B130:B131"
     },
     {
       "table": "tbl_LookupBudgetPeriod",
       "sheet": "15_Settings",
-      "ref": "B132:B134"
+      "ref": "B133:B135"
     },
     {
       "table": "tbl_LookupBudgetCategory",
       "sheet": "15_Settings",
-      "ref": "B136:B141"
+      "ref": "B137:B142"
     },
     {
       "table": "tbl_LookupAlertSeverity",
       "sheet": "15_Settings",
-      "ref": "B143:B146"
+      "ref": "B144:B147"
     },
     {
       "table": "tbl_KPITargets",
       "sheet": "15_Settings",
-      "ref": "B150:F160"
+      "ref": "B151:F161"
     },
     {
       "table": "tbl_HealthScoreWeights",
       "sheet": "15_Settings",
-      "ref": "B164:C174"
+      "ref": "B165:C175"
     },
     {
       "table": "tbl_Holidays",
       "sheet": "15_Settings",
-      "ref": "B178:C179"
+      "ref": "B179:C180"
     },
     {
       "table": "tbl_RAW_Orders",

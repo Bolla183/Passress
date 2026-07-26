@@ -137,9 +137,10 @@ For each `RAW_`/`DIM_`/`FACT_`/`LOG_` sheet in the workbook:
    hidden sheet, same top-left cell the placeholder table occupied (row 11,
    column B in every technical sheet — see `TECHNICAL_DOCUMENTATION.md`).
 5. Confirm the resulting table is named after the query (no `tbl_` prefix)
-   — this is exactly the naming convention every DAX measure, named range,
-   and Phase 6/7 worksheet formula already assumes (see
-   `PHASE6_PRODUCTION_READINESS_REVIEW.md` §10.1 for why this matters).
+   — every DAX measure already assumes this no-prefix convention. Every
+   worksheet FORMULA and named range in the workbook, by contrast,
+   deliberately still points at the `tbl_`-prefixed placeholder name (see
+   §5.4 — this is not an oversight).
 
 ### 5.3 Wire every query, not a subset
 
@@ -152,6 +153,44 @@ real. `LOG_RefreshHistory`/`LOG_DataQuality` should be wired last — they
 depend on the `RAW_` queries existing so Excel can compute the
 "refresh-after" dependency Power Query needs (see that file's own header
 comment on why this ordering works).
+
+### 5.4 Required manual step after wiring RAW_Variants / RAW_Collections
+
+**Two named ranges must be manually repointed once you wire these two
+specific queries — this is not optional cleanup, the SKU/Collection
+dropdowns across the workbook silently keep reading stale placeholder data
+until you do it:**
+
+1. Formulas tab → **Name Manager**.
+2. Find **`SKUList`** — its "Refers to" currently reads
+   `=tbl_RAW_Variants[SKU]`. Edit it to `=RAW_Variants[SKU]` (drop the
+   `tbl_` prefix) — but **only after** `RAW_Variants` is actually wired
+   (§5.2); editing this before the real table exists reintroduces the exact
+   bug this section exists to prevent (see the note below).
+3. Find **`CollectionTitleList`** — same edit:
+   `=tbl_RAW_Collections[Title]` → `=RAW_Collections[Title]`, only after
+   `RAW_Collections` is wired.
+4. Close Name Manager, then **Data → Refresh All** to confirm every SKU/
+   Collection dropdown (Product Cost Master, Manual Expenses, PO Lines,
+   Goods Receipt) still offers real choices.
+
+**Why this manual step exists at all** (the short version — full technical
+finding in `PHASE8_DOCUMENTATION.md`): every workbook-scoped named range and
+worksheet formula in this file that reads a `RAW_`/`DIM_`/`FACT_`/`LOG_`
+table intentionally points at the `tbl_`-prefixed **placeholder** table name
+(which always exists), not the post-wiring name Power Query eventually
+creates. A real-world test caught that pointing a defined name at a table
+that doesn't exist ANYWHERE in the file yet doesn't just show a formula
+error — Excel's loader treats it as structurally invalid and strips the
+name (and every Data Validation dropdown depending on it), forcing a
+"we found a problem with some content" repair just to open the file. Every
+other `RAW_`/`DIM_`/`FACT_`/`LOG_`-reading formula in the workbook (in
+`BI_Alerts`, `14_Data_Quality`, `RPT_Workflow`, `01_Home`) has the same
+`tbl_`-prefix-until-wired design and is safe to leave exactly as generated
+— **`SKUList`/`CollectionTitleList` are the only two names you need to
+touch by hand**, because Data Validation is the one place in this workbook
+that reads a named range's formula directly rather than a cell formula
+that can independently show `#REF!` without corrupting the file structure.
 
 ---
 

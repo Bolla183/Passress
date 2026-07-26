@@ -735,12 +735,13 @@ row, _ = add_kpi_row(ws, row, ["Last Refresh", "Data Quality", "Workbook Version
 # "Last Refresh" / "Data Quality" were left as static Phase 1 "—" placeholders
 # through Phases 2-6 even though this sheet's own doc_block always promised
 # they read LOG_RefreshHistory / LOG_DataQuality — found and wired in the
-# Phase 7 production-readiness review. Both use the same LOG_RefreshHistory
-# post-wiring table name convention already established for SKUList/etc.
-# (see the NAMED_LIST_RANGES comment near RAW_Variants below), and
+# Phase 7 production-readiness review. Both use tbl_LOG_RefreshHistory (the
+# Phase 1 placeholder table name, which always exists) rather than the
+# post-wiring name — see the NAMED_LIST_RANGES comment near tbl_RAW_Variants
+# below for why pointing at a not-yet-existing table broke real Excel opens.
 # OverallDataQualityPct is the same named range 14_Data_Quality/BI_HealthScore
 # already read — reused, not recomputed.
-last_refresh_cell = ws.cell(row=home_kpi_top + 1, column=2, value='=IFERROR(TEXT(MAX(LOG_RefreshHistory[Timestamp]),"dd-mmm hh:mm"),"—")')
+last_refresh_cell = ws.cell(row=home_kpi_top + 1, column=2, value='=IFERROR(TEXT(MAX(tbl_LOG_RefreshHistory[Timestamp]),"dd-mmm hh:mm"),"—")')
 last_refresh_cell.font = f(size=13, bold=True, color=C["white"])
 last_refresh_cell.fill = fill(C["kpi_fill"])
 last_refresh_cell.alignment = Alignment(vertical="center", horizontal="left", indent=1)
@@ -1706,31 +1707,34 @@ row = doc_block(
 dq_kpi_top = row
 row, _ = add_kpi_row(ws, row, ["Last Refresh", "Rows Loaded", "Errors Found", "Data Freshness"], col_start=2, card_width=2)
 
-# Wired to LOG_RefreshHistory/LOG_DataQuality — left as static "—"
+# Wired to tbl_LOG_RefreshHistory/tbl_LOG_DataQuality (the always-present
+# placeholder table names, not the post-wiring names — see the
+# NAMED_LIST_RANGES comment near tbl_RAW_Variants for why referencing a
+# not-yet-existing table broke real Excel opens) — left as static "—"
 # placeholders through Phases 2-6 despite this sheet existing specifically
 # to surface refresh health; found and wired in the Phase 7 production-
 # readiness review. "Errors Found" reuses the same WARNING-status check
 # already used by BI_Alerts (ALT-11) and the Refresh Failures row in
 # tbl_DataQualityChecks above — not recomputed differently here.
-dq_last_refresh = ws.cell(row=dq_kpi_top + 1, column=2, value='=IFERROR(TEXT(MAX(LOG_RefreshHistory[Timestamp]),"dd-mmm hh:mm"),"—")')
+dq_last_refresh = ws.cell(row=dq_kpi_top + 1, column=2, value='=IFERROR(TEXT(MAX(tbl_LOG_RefreshHistory[Timestamp]),"dd-mmm hh:mm"),"—")')
 dq_last_refresh.font = f(size=13, bold=True, color=C["white"])
 dq_last_refresh.fill = fill(C["kpi_fill"])
 dq_last_refresh.alignment = Alignment(vertical="center", horizontal="left", indent=1)
 dq_last_refresh.protection = Protection(locked=True)
 
-dq_rows_loaded = ws.cell(row=dq_kpi_top + 1, column=4, value='=IFERROR(SUM(LOG_RefreshHistory[RowsLoaded]),"—")')
+dq_rows_loaded = ws.cell(row=dq_kpi_top + 1, column=4, value='=IFERROR(SUM(tbl_LOG_RefreshHistory[RowsLoaded]),"—")')
 dq_rows_loaded.font = f(size=20, bold=True, color=C["white"])
 dq_rows_loaded.fill = fill(C["kpi_fill"])
 dq_rows_loaded.alignment = Alignment(vertical="center", horizontal="left", indent=1)
 dq_rows_loaded.protection = Protection(locked=True)
 
-dq_errors_found = ws.cell(row=dq_kpi_top + 1, column=6, value='=IFERROR(COUNTIF(LOG_DataQuality[Status],"WARNING*"),"—")')
+dq_errors_found = ws.cell(row=dq_kpi_top + 1, column=6, value='=IFERROR(COUNTIF(tbl_LOG_DataQuality[Status],"WARNING*"),"—")')
 dq_errors_found.font = f(size=20, bold=True, color=C["white"])
 dq_errors_found.fill = fill(C["kpi_fill"])
 dq_errors_found.alignment = Alignment(vertical="center", horizontal="left", indent=1)
 dq_errors_found.protection = Protection(locked=True)
 
-dq_freshness = ws.cell(row=dq_kpi_top + 1, column=8, value='=IFERROR(TODAY()-INT(MAX(LOG_RefreshHistory[Timestamp])),"—")')
+dq_freshness = ws.cell(row=dq_kpi_top + 1, column=8, value='=IFERROR(TODAY()-INT(MAX(tbl_LOG_RefreshHistory[Timestamp])),"—")')
 dq_freshness.font = f(size=20, bold=True, color=C["white"])
 dq_freshness.fill = fill(C["kpi_fill"])
 dq_freshness.alignment = Alignment(vertical="center", horizontal="left", indent=1)
@@ -1763,6 +1767,16 @@ row += 1
 # checks should work as soon as Power Query is refreshed, without requiring
 # the full Data Model + DAX layer to exist yet — checking your data before
 # you build reports on it is the right order of operations.
+# Every RAW_/LOG_/DIM_ reference below uses the tbl_-prefixed PLACEHOLDER
+# table name (tbl_RAW_Variants, not RAW_Variants), even though every DAX
+# measure uses the no-prefix post-wiring name — see the NAMED_LIST_RANGES
+# comment near tbl_RAW_Variants (this file, Phase 8) for why a formula
+# referencing a table that doesn't exist yet caused real Excel installs to
+# need a repair just to open the file. DIM_/FACT_ tables go through the
+# exact same placeholder-until-wired lifecycle as RAW_/LOG_ (dax/README.md
+# Step 1 — Close & Load To replaces tbl_DIM_Product with DIM_Product only
+# once the Data Model is built), so the Missing Supplier check below uses
+# tbl_DIM_Product too, not DIM_Product.
 set_col_widths(ws, [3, 30, 30, 16, 30, 30])
 ws.cell(row=row, column=2, value="DATA QUALITY CHECKS").font = f(size=12, bold=True, color=C["black"])
 row += 1
@@ -1775,37 +1789,37 @@ row = add_table(
 dq_data_row = dq_header_row + 1
 DATA_QUALITY_CHECKS = [
     ("Missing SKU", "RAW_Variants rows with a blank SKU",
-     '=COUNTIFS(RAW_Variants[SKU],"")',
+     '=COUNTIFS(tbl_RAW_Variants[SKU],"")',
      "Reused from Alerts (ALT-04) — same check, not recomputed differently here."),
     ("Missing Cost", "Order lines with no matching Product Cost Master row",
      '=CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")',
      "Reused from dax/MEASURES.md's [Lines Missing Cost] — same measure Alerts (ALT-03) reads."),
     ("Missing Supplier", "SKUs with no PrimarySupplierID (DIM_Product)",
-     '=COUNTIFS(DIM_Product[PrimarySupplierID],"")',
-     "PrimarySupplierID is best-effort (most recent Goods Receipt per SKU) — see DIM_Product.pq. A count here is expected for never-received SKUs, not necessarily an error."),
+     '=COUNTIFS(tbl_DIM_Product[PrimarySupplierID],"")',
+     "PrimarySupplierID is best-effort (most recent Goods Receipt per SKU) — see DIM_Product.pq. A count here is expected for never-received SKUs, not necessarily an error. Uses tbl_DIM_Product (the placeholder name): DIM_/FACT_ tables go through the exact same Phase-1-placeholder-until-wired lifecycle as RAW_/LOG_ tables (dax/README.md Step 1) — DIM_Product with no prefix doesn't exist until the Data Model is built, same root cause as the RAW_/LOG_ fix above."),
     ("Duplicate Orders", "OrderIDs appearing more than once in RAW_Orders",
-     '=SUMPRODUCT((COUNTIF(RAW_Orders[OrderID],RAW_Orders[OrderID])>1)*1)',
+     '=SUMPRODUCT((COUNTIF(tbl_RAW_Orders[OrderID],tbl_RAW_Orders[OrderID])>1)*1)',
      "Should always be 0 — Shopify order IDs are unique. A nonzero count means the Power Query refresh appended duplicate rows; check RAW_Orders.pq's incremental-window logic first."),
     ("Duplicate Expenses", "Manual Expenses flagged Possible Duplicate",
      '=COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")',
      "Reused from Alerts (ALT-06) and Phase 3's own duplicate-flag column — not recomputed."),
     ("Products without Collection", "RAW_Products rows with blank CollectionIDs",
-     '=COUNTIFS(RAW_Products[CollectionIDs],"")',
+     '=COUNTIFS(tbl_RAW_Products[CollectionIDs],"")',
      None),
     ("Products without Images", "N/A — not computable with current data",
      '="N/A"',
      "RAW_Products.pq never fetched image data (not in Phase 2's original scope, and Phase 6 must not modify Phase 2's files) — adding an `images` field to that GraphQL query is a clean, isolated future addition, not a Phase 6 change."),
     ("Negative Inventory", "RAW_InventoryLevels rows with Available < 0",
-     '=COUNTIFS(RAW_InventoryLevels[Available],"<0")',
+     '=COUNTIFS(tbl_RAW_InventoryLevels[Available],"<0")',
      "Should always be 0 — a negative available count usually signals an oversell or an inventory-sync issue in Shopify itself, not a workbook bug."),
     ("Missing Customer", "RAW_Orders rows with a blank CustomerID",
-     '=COUNTIFS(RAW_Orders[CustomerID],"")',
+     '=COUNTIFS(tbl_RAW_Orders[CustomerID],"")',
      "Expected to be nonzero for legitimate guest checkouts — a HIGH count relative to total orders is the actual signal worth investigating, not any nonzero count."),
     ("Missing Payment", "Orders in RAW_Orders with no matching transaction in RAW_Transactions",
-     '=SUMPRODUCT((COUNTIF(RAW_Transactions[OrderID],RAW_Orders[OrderID])=0)*1)',
+     '=SUMPRODUCT((COUNTIF(tbl_RAW_Transactions[OrderID],tbl_RAW_Orders[OrderID])=0)*1)',
      "An anti-join count — orders that exist but have zero associated payment transactions. Should be near 0 for a store where checkout = payment."),
     ("Refresh Failures", "Refreshes with an error condition (from LOG_DataQuality)",
-     '=COUNTIF(LOG_DataQuality[Status],"WARNING*")',
+     '=COUNTIF(tbl_LOG_DataQuality[Status],"WARNING*")',
      "Reused from Alerts (ALT-11) — same LOG_DataQuality check, not recomputed."),
 ]
 for i, (name, metric, formula, notes) in enumerate(DATA_QUALITY_CHECKS):
@@ -1965,6 +1979,8 @@ VERSION_LOG_ROWS = [
      "Full line-by-line review of build_workbook.py, every Power Query shared function, a representative cross-section of staging/star-schema queries, and the complete DAX measure library, against explicit correctness/performance/security criteria. Found and fixed 5 real defects: BI_Alerts ALT-10's stray placeholder-token formula (simplified, no functional change but removed a maintenance trap); 14_Data_Quality's Historical Refresh Trend chart was off-by-one, silently dropping the first logged refresh; BI_Insights' INS-06/INS-07 (Best/Weakest seller) called CUBERANKEDMEMBER against an unordered, unranked MDX set, so both insights always showed the identical arbitrary product instead of true sales-ranked results — fixed with proper CUBESET-backed ranking (BDESC/BASC by Net Sales), the same pattern used everywhere else in the workbook; 01_Home's and 14_Data_Quality's Last Refresh/Data Quality/Rows Loaded/Errors Found KPI cards were left as static Phase 1 placeholders despite their own doc_block promising live LOG_ data — wired to existing LOG_RefreshHistory/LOG_DataQuality/OverallDataQualityPct sources, no new measures. Also corrected the now-inaccurate 'Placeholder, built in Phase 4' label on 04_Sales/06_Customers/07_Inventory/09_Profitability/13_Marketing/05_Products/08_Finance's still-unbuilt generic dashboard chart/PivotTable placeholders — deliberately left unbuilt (never commissioned by any phase's brief, and wiring their KPI cards would require inventing new DAX measures outside this phase's 'no new features' scope) but the stale phase-attribution text was actively misleading and is now accurate. Four new documentation deliverables: DEPLOYMENT_GUIDE.md, OPERATIONS_MANUAL.md, TECHNICAL_DOCUMENTATION.md, and PHASE7_FINAL_ARCHITECTURE_REVIEW.md (technical debt, performance/security review, SQL Server + Power BI migration path). No architecture changes, no new dashboards or modules — additive fixes and documentation only, per this phase's explicit scope."],
     ["8.0", "2026-07-26", "Phase 8 — Placeholder Completion (Reuse-Only)",
      "Completed every remaining placeholder KPI card, chart, and 'PivotTable' substitute that could be built from the existing Power Query layer, Data Model, and DAX measure library — architecture frozen, no new measures, no new KPIs, no new dashboards, per this phase's explicit scope. 04_Sales/05_Products/06_Customers/07_Inventory/08_Finance/09_Profitability/13_Marketing rebuilt: 20 of 28 KPI cards wired to existing measures, 6 new native charts (Sales/Stock/Margin/Discount trends, a 3-series P&L Trend, a Top-10-Products bar chart), 12 CUBE-function breakdown tables standing in for a PivotTable (Sales/Margin by Product/Collection, Stock by Location, Top Customers, Geography, etc. — a new add_cube_breakdown_table helper generalizing Phase 5's add_cube_top_n to multiple measure columns, same underlying mechanism), P&L Statement and Cash Flow Statement built directly from dax/MEASURES.md §1/§3's own documented measure maps. 10_Expenses/11_Capital/12_Suppliers' own unwired KPI cards (missed by Phase 7's sweep, caught in this phase's fuller scan) also completed — 6 of 12 wired, 3 of them reusing RPT_Workflow's own existing formulas verbatim. Order List and Variant Detail (row-level detail no CUBE function can produce) linked directly to RAW_Orders/DIM_Product instead of left blank. Every remaining gap (13 KPI cards, 4 chart/pivot items) is left as a visible, specific 'Not implementable: <reason>' note in the workbook itself, not just in documentation — no existing measure covers the concept, no Data Model dimension exists for the breakdown, the data is row-level and can't be produced by a CUBE function, or (Customer Cohorts alone) the underlying data exists but a true 2D matrix needs an execution-untestable nested-MDX pattern. Full inventory in /passress-mis/PHASE8_DOCUMENTATION.md. Second full scan after all fixes: 0 static placeholder cells, 0 generic placeholder boxes remaining, all structural validation clean."],
+    ["9.0", "2026-07-26", "Phase 9 — File-Corruption Hotfix (Real-World Test Finding)",
+     "Triggered by the first real Windows Excel open of this workbook, which required a repair just to load ('Removed Records: Named range from workbook.xml' + 'Formula from sheet5/10/12.xml' — confirmed via workbook.xml.rels to be 05_Products/10_Expenses/12_Suppliers, the three sheets sourcing SKU/Collection dropdowns from SKUList/CollectionTitleList). Root cause: those two named ranges (and several worksheet formulas in BI_Alerts, 14_Data_Quality, RPT_Workflow, 01_Home added in Phases 6-8) pointed at the POST-WIRING table name (RAW_Variants, LOG_DataQuality, etc.) rather than the always-present tbl_-prefixed placeholder — a Phase 6 design choice that assumed an unresolved reference would simply show a formula error until Power Query is wired. A real Excel open proved otherwise: a workbook-scoped defined name referencing a table that doesn't exist ANYWHERE in the file is structurally invalid at load time, not just unresolved at calculation time, so Excel strips the name and every Data Validation dropdown depending on it, forcing a file repair. Reverted every affected named range and worksheet formula back to the tbl_-prefixed placeholder name (DAX measures untouched — they read the Data Model, not Excel Table objects, so were never affected). A second, related finding from the same stricter validation: 14_Data_Quality's Missing Supplier check referenced DIM_Product directly, and DIM_/FACT_ tables go through the identical placeholder-until-wired lifecycle as RAW_/LOG_ (dax/README.md Step 1) — fixed to tbl_DIM_Product. Added a permanent build-time check verifying every defined name and every Table[Column] formula reference resolves to a table that actually exists in the generated file — 0 issues found after the fix (previously no such check existed; bracket-balance/XML-well-formedness checks don't catch a semantically invalid table reference). New required manual step added to DEPLOYMENT_GUIDE.md §5.4: rename SKUList/CollectionTitleList via Name Manager to drop the tbl_ prefix once RAW_Variants/RAW_Collections are actually wired — documented as a one-time, unmissable step rather than left to be silently forgotten. Full findings in /passress-mis/PHASE9_DOCUMENTATION.md; PHASE6_PRODUCTION_READINESS_REVIEW.md's original (superseded) fix table annotated, not rewritten."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
@@ -2296,19 +2312,35 @@ for s in RAW_SHEETS:
 # directly from the live Shopify staging tables, not a separate manual list —
 # this is what keeps master data integrated with the Shopify Data Model.
 #
-# Deliberately "RAW_Variants"/"RAW_Collections", NOT "tbl_RAW_Variants"/
-# "tbl_RAW_Collections" (the Phase 1 placeholder table names still on these
-# sheets today): per power-query/README.md's setup steps, the placeholder
-# table gets DELETED and Power Query's "Load To Existing Worksheet" creates
-# a new table named after the QUERY (e.g. "RAW_Variants") once wired — so
-# this points at the table's PERMANENT post-wiring name. Every DAX measure
-# already assumes this same no-tbl_-prefix convention (dax/MEASURES.md).
-# Until Phase 2 is wired, these two named ranges (and everything that reads
-# them — Phase 3's SKU/Collection dropdowns, Phase 6's data-quality checks)
-# will show a broken reference — expected, same as every other "resolves
-# once wired" caveat in this workbook; wire Phase 2 before relying on them.
-NAMED_LIST_RANGES.append(("SKUList", "RAW_Variants", "SKU"))
-NAMED_LIST_RANGES.append(("CollectionTitleList", "RAW_Collections", "Title"))
+# Deliberately "tbl_RAW_Variants"/"tbl_RAW_Collections" — the Phase 1
+# PLACEHOLDER table names, WITH the tbl_ prefix — not the post-wiring names
+# ("RAW_Variants"/"RAW_Collections") Power Query creates once you delete the
+# placeholder and "Load To Existing Worksheet." Phase 6 originally pointed
+# these two named ranges (and every formula listed below) at the post-wiring
+# name, reasoning that DAX measures already use that convention and the
+# workbook would otherwise need a manual rename later. REVERSED in the phase
+# that found real user-reported evidence this was wrong: a workbook-scoped
+# defined name whose formula references a table that does not exist ANYWHERE
+# in the file (true before Power Query is wired) isn't just "shows #REF!
+# when calculated" — Excel's loader treats it as structurally invalid and
+# silently strips the name AND every Data Validation dropdown that depends
+# on it, forcing a "we found a problem with some content" repair just to
+# OPEN the file (confirmed via a real repair-log screenshot: the named range
+# plus the SKU/Collection dropdown formulas on 05_Products/10_Expenses/
+# 12_Suppliers — the exact three sheets using these two named ranges — were
+# removed on open). A table that's always guaranteed to exist (the
+# placeholder, tbl_RAW_Variants) keeps the file valid from the moment it's
+# generated. The tradeoff this reintroduces: once you actually wire
+# RAW_Variants/RAW_Collections in Power Query, you must manually update
+# these two named ranges' "Refers to" formula (Formulas > Name Manager) to
+# drop the tbl_ prefix — this exact step is now spelled out in
+# DEPLOYMENT_GUIDE.md's setup sequence, not left to be silently forgotten.
+# Every OTHER formula in this workbook that reads a RAW_/LOG_ table directly
+# (BI_Alerts, 14_Data_Quality, RPT_Workflow, 01_Home's KPI cards) uses the
+# same tbl_-prefixed placeholder name for the same reason — see each one's
+# own comment.
+NAMED_LIST_RANGES.append(("SKUList", "tbl_RAW_Variants", "SKU"))
+NAMED_LIST_RANGES.append(("CollectionTitleList", "tbl_RAW_Collections", "Title"))
 
 DIM_SHEETS = [
     dict(code="DIM_Date", pq="star-schema/DIM_Date.pq",
@@ -2588,14 +2620,14 @@ ALERTS = [
     ("ALT-01", "Low Inventory", "Inventory Value below target", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Value]")<CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Target]")*0.5,"TRIGGERED","OK")', "Warning"),
     ("ALT-02", "Negative Margin", "Gross Margin % below 0", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Gross Margin %]")<0,"TRIGGERED","OK")', "Critical"),
     ("ALT-03", "Products without Cost", "Order lines with no matching Product Cost Master row", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")&" lines)","OK")', "Warning"),
-    ("ALT-04", "Products without SKU", "RAW_Variants rows with a blank SKU", '=IF(COUNTIFS(RAW_Variants[SKU],"")>0,"TRIGGERED","OK")', "Warning"),
+    ("ALT-04", "Products without SKU", "RAW_Variants rows with a blank SKU", '=IF(COUNTIFS(tbl_RAW_Variants[SKU],"")>0,"TRIGGERED","OK")', "Warning"),
     ("ALT-05", "Expenses without Category", "Manual Expenses rows with a blank Expense Category", '=IF(COUNTIFS(tbl_ManualExpenses[Expense Category],"")>0,"TRIGGERED","OK")', "Warning"),
     ("ALT-06", "Duplicate Expenses", "Manual Expenses flagged Possible Duplicate", '=IF(COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")>0,"TRIGGERED ("&COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")&")","OK")', "Info"),
     ("ALT-07", "Inactive Products", "Product Cost Master rows marked Inactive with no Active replacement", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")>0,"REVIEW — see Products without Cost above (same root cause)","OK")', "Info"),
     ("ALT-08", "Slow Moving Inventory", "SKUs below the Slow Moving threshold (dax/MEASURES.md)", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")&" SKUs)","OK")', "Info"),
     ("ALT-09", "Dead Stock", "SKUs with zero sales in 180 days while still holding stock", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")&" SKUs)","OK")', "Warning"),
-    ("ALT-10", "Missing Shopify Sync", "No successful refresh recorded in the last 2 days", '=IF(COUNTIFS(LOG_RefreshHistory[Timestamp],">="&TODAY()-2)=0,"TRIGGERED","OK")', "Critical"),
-    ("ALT-11", "Refresh Errors", "LOG_DataQuality rows with a WARNING status this refresh", '=IF(COUNTIF(LOG_DataQuality[Status],"WARNING*")>0,"TRIGGERED","OK")', "Warning"),
+    ("ALT-10", "Missing Shopify Sync", "No successful refresh recorded in the last 2 days", '=IF(COUNTIFS(tbl_LOG_RefreshHistory[Timestamp],">="&TODAY()-2)=0,"TRIGGERED","OK")', "Critical"),
+    ("ALT-11", "Refresh Errors", "LOG_DataQuality rows with a WARNING status this refresh", '=IF(COUNTIF(tbl_LOG_DataQuality[Status],"WARNING*")>0,"TRIGGERED","OK")', "Warning"),
     ("ALT-12", "Over Budget Expenses", "Operating Expenses exceed the Budget for the current period", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Operating Expenses]")>CUBEVALUE("ThisWorkbookDataModel","[Measures].[Expense Budget (Period)]"),"TRIGGERED","OK")', "Warning"),
 ]
 for i, (aid, name, cond, formula, sev) in enumerate(ALERTS):
@@ -2856,7 +2888,7 @@ ws.cell(row=wf_row, column=2, value="PURCHASING & RECEIVING").font = f(size=10, 
 wf_row += 1
 WORKFLOW_METRICS_1 = [
     ("Purchase Orders (Total)", '=COUNTA(tbl_POHeader[PO Number])', "All POs ever entered, any status."),
-    ("Open Orders", '=COUNTIFS(RAW_Orders[FulfillmentStatus],"<>FULFILLED")', "Shopify orders not yet fully fulfilled."),
+    ("Open Orders", '=COUNTIFS(tbl_RAW_Orders[FulfillmentStatus],"<>FULFILLED")', "Shopify orders not yet fully fulfilled."),
     ("Pending Receipts", '=COUNTIFS(tbl_POHeader[Status],"Approved")+COUNTIFS(tbl_POHeader[Status],"Sent")+COUNTIFS(tbl_POHeader[Status],"Partially Received")', "POs Approved, Sent, or Partially Received — not yet fully in hand."),
     ("Inventory to Receive (units)", '=SUM(tbl_GoodsReceipt[Remaining Quantity])', "Reuses Phase 3's own Remaining Quantity column (12_Suppliers) — not recomputed here."),
     ("Monthly Purchasing (this month)", 'CUBEVALUE("ThisWorkbookDataModel","[Measures].[Cash Paid for Purchases]")', "Current-period Cash Paid for Purchases (dax/MEASURES.md)."),

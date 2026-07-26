@@ -81,16 +81,31 @@ by purpose for readability.
 | BI-generated | `tbl_BI_Insights`, `tbl_BI_Alerts`, `tbl_BI_Forecast`, `tbl_BI_HealthScore` |
 | Reports | `tbl_RPT_Workflow` (`RPT_ExecutiveBrief` uses direct cell formulas, not a Table) |
 
-**Naming lifecycle — read before wiring Power Query:** every `RAW_`/`LOG_`
-table above is a **placeholder** named `tbl_<code>` (e.g.
-`tbl_RAW_Variants`). Once Power Query is wired per `DEPLOYMENT_GUIDE.md`
-§5, the placeholder is deleted and the live table Power Query creates is
-named after the **query**, with no `tbl_` prefix (`RAW_Variants`). Every
-DAX measure, and every worksheet formula as of Phase 7, already assumes the
-post-wiring name — see `PHASE6_PRODUCTION_READINESS_REVIEW.md` §10.1 for
-the bug class this convention exists to prevent. Manual-entry tables
+**Naming lifecycle — read before wiring Power Query:** every `RAW_`/`DIM_`/
+`FACT_`/`LOG_` table above is a **placeholder** named `tbl_<code>` (e.g.
+`tbl_RAW_Variants`). Once Power Query (or, for `DIM_`/`FACT_`, the Data
+Model build in `dax/README.md` §1) is wired per `DEPLOYMENT_GUIDE.md` §5,
+the placeholder is deleted and the live table created in its place is
+named after the **query**, with no `tbl_` prefix (`RAW_Variants`).
+
+**DAX measures use the no-prefix name** (they're evaluated inside the Data
+Model, a separate object model unaffected by Excel Table naming). **Every
+worksheet formula and named range uses the `tbl_`-prefixed placeholder
+name instead** — the opposite of what Phase 6 originally shipped. Phase 6
+pointed these at the post-wiring name on the reasoning that DAX already
+used that convention; a real-world test caught that a defined name (or,
+transitively, a Data Validation dropdown reading one) referencing a table
+that doesn't exist ANYWHERE in the file yet isn't just "shows an error" —
+Excel's loader treats it as structurally invalid and strips it, forcing a
+repair just to open the file. Reversed for every worksheet formula and
+named range; `PHASE6_PRODUCTION_READINESS_REVIEW.md` §10.1 documents the
+original (superseded) reasoning, `PHASE9_DOCUMENTATION.md` documents the
+reversal and why. **The one manual step this reintroduces**: once you wire
+`RAW_Variants`/`RAW_Collections`, you must repoint `SKUList`/
+`CollectionTitleList` (Name Manager) to drop the `tbl_` prefix —
+`DEPLOYMENT_GUIDE.md` §5.4 has the exact steps. Manual-entry tables
 (`tbl_ProductCostMaster`, `tbl_ManualExpenses`, etc.) never go through this
-lifecycle — their `tbl_` prefix is permanent.
+lifecycle at all — their `tbl_` prefix is permanent.
 
 ### 2.1 Column-level detail
 
@@ -110,7 +125,7 @@ second copy.
 | Type | Count | Examples | Defined in |
 |---|---|---|---|
 | Single-cell | 21 | `BusinessHealthScore`, `BusinessHealthStatus`, `OverallDataQualityPct`, `FilterDateFrom`/`FilterDateTo`/`FilterCollection`/`FilterSKU`/`FilterSupplier`/`FilterLocation`/`FilterCampaign`, `SetShopifyStoreDomain`, `SetLookbackDaysIncrementalRefresh`, etc. | `NAMED_RANGES` list, `scripts/build_workbook.py` |
-| List/table-column | 18 | `SKUList` (→`RAW_Variants[SKU]`), `CollectionTitleList` (→`RAW_Collections[Title]`), `SupplierNameList`, `POHeaderList`, 13× `Lookup*List` | `NAMED_LIST_RANGES` list, same file |
+| List/table-column | 18 | `SKUList` (→`tbl_RAW_Variants[SKU]` until wired, then `RAW_Variants[SKU]` — see §2's naming lifecycle note), `CollectionTitleList` (→`tbl_RAW_Collections[Title]`, same), `SupplierNameList`, `POHeaderList`, 13× `Lookup*List` | `NAMED_LIST_RANGES` list, same file |
 
 `manifest.json` regenerates the complete, exact list (name/sheet/cell or
 name/table/column) on every build — the definitive source when the exact

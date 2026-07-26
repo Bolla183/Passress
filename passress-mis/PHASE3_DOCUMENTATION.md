@@ -42,8 +42,10 @@ historical row. Phase 4's COGS calculation will match each order line to the
 cost row whose SKU matches and whose Effective From/To range contains the
 order's date — that's the whole point of preserving every version here.
 
-**Relationship:** `SKU` → `RAW_Variants[SKU]` (dropdown source). Phase 4:
-`SKU` + date-range → `FACT_OrderLines` for time-correct COGS.
+**Relationship:** `SKU` → `tbl_RAW_Variants[SKU]` (dropdown source — the
+placeholder table name; see `PHASE9_DOCUMENTATION.md` for why this points
+at the placeholder rather than the post-wiring `RAW_Variants` name). Phase
+4: `SKU` + date-range → `FACT_OrderLines` for time-correct COGS.
 
 **Data Model mirror:** `DIM_ProductCostHistory` (hidden) — same time-variant
 shape (CostKey, SKU, Collection, TotalLandedCost, SellingPrice,

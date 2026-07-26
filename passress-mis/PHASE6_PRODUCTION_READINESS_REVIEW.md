@@ -68,6 +68,21 @@ formulas were not:
 | 4 | `BI_Alerts` ALT-10 (Missing Shopify Sync) | `tbl_LOG_DataQuality[Status]` | `LOG_DataQuality[Status]` | Same — alert never fires |
 | 5 | `BI_Alerts` ALT-11 (Refresh Errors) | `tbl_LOG_RefreshHistory[Timestamp]` | `LOG_RefreshHistory[Timestamp]` | Same |
 
+> **Superseded — see `PHASE9_DOCUMENTATION.md`.** A real-world test found
+> that pointing these (and every other RAW_/DIM_/FACT_/LOG_-reading
+> worksheet formula and named range) at the post-wiring name, before that
+> table exists anywhere in the file, doesn't just show a formula error —
+> Excel's loader treats a defined name referencing a nonexistent table as
+> structurally invalid and strips it, taking dependent Data Validation
+> dropdowns with it, forcing a repair just to open the file. Every fix in
+> this table (and every other worksheet formula referencing these tables)
+> was reverted back to the `tbl_`-prefixed placeholder name in Phase 9,
+> with a required manual rename step added to `DEPLOYMENT_GUIDE.md` §5.4
+> for `SKUList`/`CollectionTitleList` specifically. This section is kept
+> as the historical record of Phase 6's own (well-reasoned, but ultimately
+> wrong given information only a live Excel test could surface) fix —
+> don't apply the "Fixed to" column above; it reintroduces the Phase 9 bug.
+
 **Why this matters more than a typical bug**: all five were syntactically
 valid formulas that would compute cleanly against the *placeholder* tables
 today, giving zero indication of a problem — they'd only break the moment
