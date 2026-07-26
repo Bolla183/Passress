@@ -20,6 +20,7 @@ from openpyxl.styles.protection import Protection
 from openpyxl.worksheet.dimensions import RowDimension
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.comments import Comment
+from openpyxl.chart import LineChart, Reference
 from openpyxl.formatting.rule import FormulaRule
 
 FONT_NAME = "Segoe UI"
@@ -69,6 +70,9 @@ TAB_COLOR = {
     "dim": "7F7F7F",
     "fact": "595959",
     "log": "C55A11",
+    "marketing": "8064A2",  # Phase 5: purple, distinguishes "not connected yet" placeholders from live RAW_ (blue)
+    "bi": "31859B",         # Phase 5: teal, system-generated BI outputs (Insights/Alerts/Forecast)
+    "future": "BFBFBF",     # Phase 5: light gray, reserved/unimplemented
 }
 
 wb = Workbook()
@@ -92,7 +96,7 @@ def set_col_widths(ws, widths):
         ws.column_dimensions[get_column_letter(i)].width = w
 
 
-def title_bar(ws, text, last_col=10):
+def title_bar(ws, text, last_col=10, is_home=False):
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
     c = ws.cell(row=1, column=1, value=text)
     c.font = f(size=18, bold=True, color=C["white"])
@@ -100,11 +104,15 @@ def title_bar(ws, text, last_col=10):
     c.alignment = Alignment(vertical="center", horizontal="left", indent=1)
     ws.row_dimensions[1].height = 34
 
+    # Breadcrumb doubles as "Back to Home" (Phase 5, item 7) — clicking
+    # anywhere on this row jumps to 01_Home, except on Home itself.
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
-    b = ws.cell(row=2, column=1, value="PASSRESS MIS   |   Home ▸ " + text)
-    b.font = f(size=9, italic=True, color=C["text_gray"])
-    b.fill = fill(C["light_gray"])
+    b = ws.cell(row=2, column=1, value=("PASSRESS MIS   |   Home ▸ " + text) if not is_home else "PASSRESS MIS   |   Home")
+    b.font = f(size=9, italic=True, color=C["text_gray"] if not is_home else C["white"])
+    b.fill = fill(C["light_gray"] if not is_home else C["dark_gray"])
     b.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+    if not is_home:
+        b.hyperlink = "#'01_Home'!A1"
     ws.row_dimensions[2].height = 16
 
 
@@ -327,13 +335,149 @@ def make_calc_column(ws, row, col, formula, numfmt=None, italic=False):
     return cell
 
 
+# --------------------------------------------- Phase 5: BI application layer --
+# CUBEVALUE/CUBESET/CUBERANKEDMEMBER read the Data Model directly into plain
+# cells — no PivotTable/PivotCache required, so these are real openpyxl-
+# writable formulas (unlike Slicers, which need a PivotTable to attach to and
+# have no reliable openpyxl write support). They only RESOLVE once the Data
+# Model + DAX measures from dax/README.md are wired up in Excel — until then
+# they display 0/blank, which is expected, not an error.
+CUBE_CONN = "ThisWorkbookDataModel"
+
+
+def cube_measure(measure_name):
+    """CUBEVALUE formula pulling one DAX measure, unfiltered (grand total)."""
+    return f'=CUBEVALUE("{CUBE_CONN}","[Measures].[{measure_name}]")'
+
+
+def add_cube_kpi_row(ws, row, labels_measures, col_start=2, card_width=2, numfmt="#,##0", height_rows=3):
+    """Dark-gray KPI cards wired to real CUBEVALUE formulas (Phase 5) instead
+    of Phase 1-3's static '—' placeholders. labels_measures: list of
+    (label, measure_name) or (label, measure_name, numfmt_override) tuples —
+    the 3rd element is optional, falling back to the row-level numfmt.
+    Returns (next_free_row, next_free_col)."""
+    col = col_start
+    top = row
+    bottom = row + height_rows - 1
+    for item in labels_measures:
+        label, measure_name = item[0], item[1]
+        card_numfmt = item[2] if len(item) > 2 else numfmt
+        left, right = col, col + card_width - 1
+        ws.merge_cells(start_row=top, start_column=left, end_row=top, end_column=right)
+        lab = ws.cell(row=top, column=left, value=label.upper())
+        lab.font = f(size=8, bold=True, color=C["med_gray"])
+        lab.alignment = Alignment(vertical="bottom", horizontal="left", indent=1)
+
+        ws.merge_cells(start_row=top + 1, start_column=left, end_row=bottom, end_column=right)
+        val = ws.cell(row=top + 1, column=left, value=cube_measure(measure_name))
+        val.font = f(size=20, bold=True, color=C["white"])
+        val.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+        val.number_format = card_numfmt
+        val.protection = Protection(locked=True)
+
+        for rr in range(top, bottom + 1):
+            for cc in range(left, right + 1):
+                ws.cell(row=rr, column=cc).fill = fill(C["kpi_fill"])
+        ws.row_dimensions[top].height = 15
+        col += card_width
+    for rr in range(top + 1, bottom + 1):
+        ws.row_dimensions[rr].height = 22
+    return bottom + 2, col
+
+
+def add_cube_trend_table(ws, top_row, top_col, measure_name, n_months=12, label="Trend"):
+    """Builds a hidden-ish helper table (Month label row + CUBEVALUE row) that
+    a native openpyxl chart can reference. DIM_Date must be marked as the
+    Data Model's date table (dax/README.md, Step 3) for the month math here
+    to line up with what the measure actually returns.
+    Returns (table_top_row, table_bottom_row, first_col, last_col)."""
+    ws.cell(row=top_row, column=top_col, value=label).font = f(size=8, bold=True, color=C["text_gray"])
+    month_row, value_row = top_row + 1, top_row + 2
+    for i in range(n_months):
+        col = top_col + 1 + i
+        # Month label, oldest to newest, computed from TODAY() so the table
+        # stays current on every open — matches Rolling 12 Months' window.
+        label_formula = f'=TEXT(EDATE(TODAY(),{-(n_months - 1 - i)}),"mmm-yy")'
+        lc = ws.cell(row=month_row, column=col, value=label_formula)
+        lc.font = f(size=8, color=C["text_gray"])
+        lc.number_format = "@"
+        vc = ws.cell(row=value_row, column=col, value=(
+            f'=CUBEVALUE("{CUBE_CONN}","[Measures].[{measure_name}]",'
+            f'"[DIM_Date].[Year].&["&YEAR(EDATE(TODAY(),{-(n_months - 1 - i)}))&"]",'
+            f'"[DIM_Date].[Month].&["&MONTH(EDATE(TODAY(),{-(n_months - 1 - i)}))&"]")'
+        ))
+        vc.font = f(size=8, color=C["calc_body"])
+        vc.number_format = "#,##0"
+    return top_row, value_row, top_col + 1, top_col + n_months
+
+
+def set_print_friendly(ws, last_col=12, last_row=90):
+    """Phase 5, item 11: 'printable to PDF without breaking' — landscape,
+    fit-to-width, a defined print area so PDF export doesn't spill columns
+    across extra pages or cut off mid-KPI-card."""
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+    ws.print_area = f"A1:{get_column_letter(last_col)}{last_row}"
+    ws.page_margins.left = ws.page_margins.right = 0.3
+    ws.page_margins.top = ws.page_margins.bottom = 0.4
+
+
+def add_native_line_chart(ws, anchor_cell, title, cats_ref, data_ref, height_cm=6, width_cm=16):
+    chart = LineChart()
+    chart.title = title
+    chart.style = 2
+    chart.y_axis.majorGridlines = None
+    chart.height = height_cm
+    chart.width = width_cm
+    chart.add_data(data_ref, titles_from_data=False)
+    chart.set_categories(cats_ref)
+    if chart.series:
+        chart.series[0].graphicalProperties.line.solidFill = C["black"]
+        chart.series[0].graphicalProperties.line.width = 20000
+        chart.series[0].smooth = False
+    chart.legend = None
+    ws.add_chart(chart, anchor_cell)
+    return chart
+
+
+def add_cube_top_n(ws, top_row, top_col, title, dim_table, dim_attribute, measure_name, n=5, ascending=False):
+    """CUBESET + CUBERANKEDMEMBER + CUBEVALUE: a live 'Top N by measure' list
+    with no PivotTable — e.g. Top 5 best-selling products. ascending=True for
+    a 'bottom N' / declining list instead."""
+    ws.cell(row=top_row, column=top_col, value=title).font = f(size=10, bold=True, color=C["text_gray"])
+    order = "BASC" if ascending else "BDESC"
+    set_formula = (
+        f'=CUBESET("{CUBE_CONN}","{{[{dim_table}].[{dim_attribute}].Children}}","{title}",'
+        f'"{order}","[Measures].[{measure_name}]")'
+    )
+    set_cell = ws.cell(row=top_row, column=top_col + 4, value=set_formula)
+    set_cell.font = f(size=7, color=C["med_gray"])
+    set_ref = f"${get_column_letter(top_col + 4)}${top_row}"
+    for i in range(n):
+        r = top_row + 1 + i
+        name_formula = f'=CUBERANKEDMEMBER("{CUBE_CONN}",{set_ref},{i + 1})'
+        val_formula = f'=CUBEVALUE("{CUBE_CONN}","[Measures].[{measure_name}]",CUBERANKEDMEMBER("{CUBE_CONN}",{set_ref},{i + 1}))'
+        nc = ws.cell(row=r, column=top_col, value=name_formula)
+        nc.font = f(size=9, color=style_calc_font())
+        vc = ws.cell(row=r, column=top_col + 2, value=val_formula)
+        vc.font = f(size=9, color=style_calc_font())
+        vc.number_format = "#,##0"
+    return top_row + n + 1
+
+
+def style_calc_font():
+    return CATEGORY_STYLE["calc"]["body_font"]
+
+
 # ============================================================================
 # 01_Home
 # ============================================================================
 ws = wb.create_sheet("01_Home")
 ws.sheet_view.showGridLines = False
 set_col_widths(ws, [3] + [14] * 11)
-title_bar(ws, "PASSRESS MIS — Home", last_col=12)
+title_bar(ws, "PASSRESS MIS — Home", last_col=12, is_home=True)
 row = doc_block(
     ws,
     "Landing page and navigation hub for the entire workbook.",
@@ -389,10 +533,51 @@ for i, (code, name) in enumerate(nav):
             ws.cell(row=rr, column=cc).fill = fill(C["dark_gray"])
     ws.row_dimensions[r].height = 18
     ws.row_dimensions[r + 1].height = 18
-row = start_row + ((len(nav) - 1) // per_row + 1) * 3 + 1
+row = start_row + ((len(nav) - 1) // per_row + 1) * 3 + 2
+
+# --- Global Filters (Phase 5, item 8) ---------------------------------------
+# Real Excel Slicers need a PivotTable/PivotCache to attach to — none exist
+# yet (that's Phase 6). These filter cells are the prepared alternative:
+# named ranges any CUBEVALUE formula on any dashboard can reference to build
+# a filtered member expression (e.g. "[DIM_Collection].[Title].["&FilterCollection&"]"),
+# so filtering stays centralized here rather than duplicated per dashboard.
+# The Partner/CEO dashboards built in Phase 5 intentionally do NOT wire their
+# KPI cards to these yet (unfiltered CUBEVALUE is the safer, verified-correct
+# baseline) — see dax/README.md's note on why filtered CUBEVALUE needs
+# spot-checking before being load-bearing. Once real PivotTables exist in
+# Phase 6, native Slicers bound to these same dimensions are a straight
+# upgrade path, not a redesign.
+ws.cell(row=row, column=2, value="GLOBAL FILTERS  (orange cells = type or choose 'All')").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+GLOBAL_FILTERS = [
+    ("Date From", "FilterDateFrom", None, "2026-01-01"),
+    ("Date To", "FilterDateTo", None, "2026-12-31"),
+    ("Collection", "FilterCollection", "CollectionTitleList", "All"),
+    ("SKU", "FilterSKU", "SKUList", "All"),
+    ("Supplier", "FilterSupplier", "SupplierNameList", "All"),
+    ("Location", "FilterLocation", None, "All"),
+    ("Campaign", "FilterCampaign", None, "All (reserved — see Marketing-Ready Layer, not connected yet)"),
+]
+filt_col = 2
+for label, rng_name, list_name, default in GLOBAL_FILTERS:
+    lab = ws.cell(row=row, column=filt_col, value=label)
+    lab.font = f(size=8, bold=True, color=C["text_gray"])
+    vc = ws.cell(row=row + 1, column=filt_col, value=default)
+    vc.font = f(size=9, bold=True, color=C["settings_body"])
+    vc.fill = fill(C["settings_fill"])
+    vc.border = BORDER_ALL
+    vc.protection = Protection(locked=False)
+    NAMED_RANGES.append((rng_name, "01_Home", f"${get_column_letter(filt_col)}${row + 1}"))
+    if list_name:
+        add_dropdown(ws, f"{get_column_letter(filt_col)}{row + 1}", list_name, label, f"Choose a {label}, or 'All'.")
+    filt_col += 2
+ws.row_dimensions[row].height = 14
+ws.row_dimensions[row + 1].height = 18
+row += 3
+
 ws.cell(row=row, column=2, value=(
-    "Phase 1 build — structure only. No live Shopify data, no calculations, "
-    "no DAX measures yet. See 15_Settings for workbook version and roadmap."
+    "Phase 5 build. See 15_Settings' Version Log for the full phase history and roadmap. "
+    "Data shown on dashboards resolves once the Data Model is wired — see power-query/README.md and dax/README.md."
 )).font = f(size=9, italic=True, color=C["text_gray"])
 freeze_below_header(ws)
 protect_ws(ws)
@@ -403,28 +588,10 @@ ws.sheet_properties.tabColor = TAB_COLOR["nav"]
 # Generic dashboard / report sheet builder (02-09, 13)
 # ============================================================================
 DASHBOARD_SHEETS = [
-    dict(
-        code="02_Partner_Dashboard", title="Partner Dashboard",
-        purpose="Consolidated, high-level view for business partners — financial and operational health at a glance, no drill-down detail.",
-        inputs="FACT_OrderLines, FACT_Refunds, FACT_ManualExpenses, FACT_Payments (via Data Model, Phase 3).",
-        outputs="KPI summary, trend chart, expense breakdown chart.",
-        relationships="Data Model star schema (DIM_Date, DIM_Product) — Phase 3.",
-        future_source="Power Pivot Data Model measures — Phase 3/4.",
-        kpis=["Net Sales", "Gross Margin %", "Net Profit", "Cash Position", "Inventory Value", "Capital Invested"],
-        charts=["Revenue Trend (Chart)", "Expense Breakdown (Chart)"],
-        pivots=["Financial Summary (PivotTable)"],
-    ),
-    dict(
-        code="03_CEO_Dashboard", title="CEO Dashboard",
-        purpose="Executive operational + strategic overview — broader KPI set and more granularity than the Partner view.",
-        inputs="FACT_OrderLines, FACT_Refunds, DIM_Product, DIM_Collection, DIM_Customer (via Data Model, Phase 3).",
-        outputs="KPI summary, sales trend, product/collection breakdown, channel/geography chart.",
-        relationships="Data Model star schema — Phase 3.",
-        future_source="Power Pivot Data Model measures — Phase 3/4.",
-        kpis=["Net Sales", "Orders", "AOV", "Gross Margin %", "Return Rate", "Inventory Turns", "Customers", "New vs Returning %"],
-        charts=["Sales Trend (Chart)", "Sales by Collection (Chart)", "Top Products (Chart)", "Geography (Chart)"],
-        pivots=["Executive Summary (PivotTable)"],
-    ),
+    # 02_Partner_Dashboard and 03_CEO_Dashboard were generic placeholders
+    # here through Phase 4 — Phase 5 gives them real, bespoke builds (below,
+    # after this loop) per the brief's explicit design for each, so they're
+    # no longer part of this generic loop.
     dict(
         code="04_Sales", title="Sales",
         purpose="Sales performance detail — orders, revenue, discounts, and returns by period, product, and channel.",
@@ -537,6 +704,191 @@ for spec in DASHBOARD_SHEETS:
 
 
 # ============================================================================
+# 02_Partner_Dashboard — Phase 5 bespoke build: "simple, beautiful, minimal,
+# no operational details" per the brief. Exactly 5 KPI cards, one trend
+# chart, a live Top-5 list, and Key Insights pulled from BI_Insights — no
+# more. Row/column math for the BI_Insights references below mirrors that
+# sheet's own construction order (documented there); if BI_Insights' layout
+# ever changes, these references need updating too.
+# ============================================================================
+ws = wb.create_sheet("02_Partner_Dashboard")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Partner Dashboard", last_col=12)
+row = doc_block(
+    ws,
+    "Executive view for business partners — the headline numbers only, no operational drill-down. Simple, beautiful, minimal by design.",
+    "The Data Model (dax/MEASURES.md, dax/PHASE5_MEASURES_ADDENDUM.md) via CUBEVALUE/CUBESET — no PivotTable required.",
+    "5 KPI cards, one 12-month trend chart, a live Top 5 Products list, Key Insights (from BI_Insights).",
+    "Reads the Data Model directly; BI_Insights supplies the insight text shown here.",
+    "Already live: every number resolves once the Data Model + measures are wired — see power-query/README.md and dax/README.md. Until then, cards show 0 and the chart is flat — expected, not an error.",
+    last_col=12,
+)
+row, _ = add_cube_kpi_row(ws, row, [
+    ("Revenue", "Net Sales"), ("Net Profit", "Net Profit"), ("Margin %", "Gross Margin %", "0.0%"),
+    ("Cash Position", "Cash Position (Direct, Cumulative)"), ("Orders", "Order Count"),
+], col_start=2, card_width=2)
+row += 1
+
+ws.cell(row=row, column=2, value="MONTHLY TREND — NET SALES").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+trend_top = row
+_, trend_value_row, trend_first_col, trend_last_col = add_cube_trend_table(ws, trend_top, 2, "Net Sales", n_months=12, label="Net Sales — trailing 12 months")
+cats_ref_p = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_top + 1, max_row=trend_top + 1)
+data_ref_p = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_value_row, max_row=trend_value_row)
+add_native_line_chart(ws, f"B{trend_top + 4}", "Net Sales — Trailing 12 Months", cats_ref_p, data_ref_p, height_cm=7, width_cm=17)
+row = trend_top + 20
+
+ws.cell(row=row, column=2, value="TOP 5 PRODUCTS  (by Net Sales)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_top_n(ws, row, 2, "Top 5 Products", "DIM_Product", "Title", "Net Sales", n=5, ascending=False)
+row += 1
+
+ws.cell(row=row, column=2, value="KEY INSIGHTS").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+# Curated subset (Sales, Margin, Cash, best-seller) — not all 8 BI_Insights
+# rows, per "no operational details." References BI_Insights' own layout:
+# InsightText lives in column D, rows 15-22 for INS-01..INS-08 (see that
+# sheet's build code for the row-math derivation).
+KEY_INSIGHT_ROWS = [15, 16, 19, 20]  # INS-01 Sales, INS-02 Margin, INS-05 Cash, INS-06 Best seller
+for i, src_row in enumerate(KEY_INSIGHT_ROWS):
+    r = row + i
+    bullet = ws.cell(row=r, column=2, value=f"=\"•  \"&IFERROR('BI_Insights'!D{src_row},\"(resolves once Data Model is wired)\")")
+    bullet.font = f(size=9, color=C["text_gray"])
+    bullet.alignment = Alignment(wrap_text=True, vertical="top")
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=11)
+    ws.row_dimensions[r].height = 16
+row += len(KEY_INSIGHT_ROWS) + 1
+
+freeze_below_header(ws)
+protect_ws(ws)
+set_print_friendly(ws, last_col=12, last_row=140)
+ws.sheet_properties.tabColor = TAB_COLOR["dashboard"]
+
+
+# ============================================================================
+# 03_CEO_Dashboard — Phase 5 bespoke build: the richer management view.
+# Section headers group Financial / Customer / Inventory / Sales /
+# Profitability / Expense / Budget / Forecast / Alerts / Insights, each its
+# own KPI-card row or small reference table — nothing crammed onto one row.
+# BI_Alerts/BI_Forecast row references mirror those sheets' own construction
+# order (documented there) the same way 02_Partner_Dashboard's does.
+# ============================================================================
+ws = wb.create_sheet("03_CEO_Dashboard")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "CEO Dashboard", last_col=12)
+row = doc_block(
+    ws,
+    "Management view: every KPI category, Budget/Forecast/Alerts summaries, and Business Insights — the full operational picture, unlike Partner Dashboard's deliberately minimal set.",
+    "The Data Model (dax/MEASURES.md, dax/PHASE5_MEASURES_ADDENDUM.md) via CUBEVALUE; BI_Alerts, BI_Forecast, BI_Insights for their respective sections.",
+    "9 KPI-card sections + Budget/Forecast/Alerts/Insights reference tables.",
+    "Reads the Data Model directly for KPI cards; reads BI_Alerts/BI_Forecast/BI_Insights directly (simple cell references, not re-derived CUBE formulas) for those three sections.",
+    "Already live: every number resolves once the Data Model + measures are wired — see power-query/README.md and dax/README.md.",
+    last_col=12,
+)
+
+CEO_SECTIONS = [
+    ("FINANCIAL KPIs", [("Net Sales", "Net Sales"), ("Gross Profit", "Gross Profit"), ("Net Profit", "Net Profit"), ("Cash Position", "Cash Position (Direct, Cumulative)")]),
+    ("SALES KPIs", [("Order Count", "Order Count"), ("Average Order Value", "Average Order Value", "#,##0"), ("Units Sold", "Units Sold"), ("Revenue Growth % YoY", "Revenue Growth % (YoY)", "0.0%")]),
+    ("CUSTOMER KPIs", [("New Customers", "New Customers"), ("Returning Customers", "Returning Customers"), ("CLV (Historical)", "Customer Lifetime Value (Historical)"), ("Retention Rate (MoM)", "Customer Retention Rate (MoM)", "0.0%")]),
+    ("INVENTORY KPIs", [("Inventory Value", "Inventory Value"), ("Inventory Turnover", "Inventory Turnover", "0.00"), ("Days of Inventory", "Days of Inventory", "0"), ("Slow Moving SKUs", "Slow Moving SKU Count", "0")]),
+    ("PROFITABILITY", [("Gross Margin %", "Gross Margin %", "0.0%"), ("Net Profit Margin %", "Net Profit Margin %", "0.0%"), ("Break-Even Net Sales", "Break-Even Net Sales")]),
+    ("EXPENSE ANALYSIS", [("Operating Expenses", "Operating Expenses"), ("Expense Ratio %", "Operating Expense Ratio %", "0.0%"), ("Expense Actual vs Budget", "Expense Actual vs Budget")]),
+]
+for title, cards in CEO_SECTIONS:
+    ws.cell(row=row, column=2, value=title).font = f(size=10, bold=True, color=C["text_gray"])
+    row += 1
+    row, _ = add_cube_kpi_row(ws, row, cards, col_start=2, card_width=2)
+    row += 1
+
+# --- Budget summary (reads DAX Actual-vs-Budget measures directly) --------
+ws.cell(row=row, column=2, value="BUDGET  (Actual vs Budget, current period)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+budget_summary_row = row
+BUDGET_ROWS = [
+    ("Revenue", "Net Sales", "Revenue Budget (Period)", "Revenue Actual vs Budget"),
+    ("Expense", "Operating Expenses", "Expense Budget (Period)", "Expense Actual vs Budget"),
+    ("Purchasing", "Cash Paid for Purchases", "Purchasing Budget (Period)", "Purchasing Actual vs Budget"),
+    ("Profit", "Net Profit", "Profit Budget (Period)", "Profit Actual vs Budget"),
+]
+for i, h in enumerate(["Category", "Actual", "Budget", "Variance"]):
+    c = ws.cell(row=budget_summary_row, column=2 + i, value=h)
+    c.font = f(size=9, bold=True, color=C["white"])
+    c.fill = fill(CATEGORY_STYLE["calc"]["header_fill"])
+    c.border = BORDER_ALL
+for i, (cat, actual_m, budget_m, var_m) in enumerate(BUDGET_ROWS):
+    r = budget_summary_row + 1 + i
+    vals = [cat, cube_measure(actual_m), cube_measure(budget_m), cube_measure(var_m)]
+    for j, v in enumerate(vals):
+        cell = ws.cell(row=r, column=2 + j, value=v)
+        cell.font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+        cell.fill = fill(CATEGORY_STYLE["calc"]["body_fill"])
+        cell.border = BORDER_ALL
+        if j > 0:
+            cell.number_format = "#,##0"
+row = budget_summary_row + len(BUDGET_ROWS) + 2
+
+# --- Forecast summary (direct cell references into BI_Forecast) -----------
+ws.cell(row=row, column=2, value="FORECAST  (next period, rolling linear trend — see BI_Forecast)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+forecast_summary_row = row
+for i, h in enumerate(["Metric", "Forecast (Next Month)"]):
+    c = ws.cell(row=forecast_summary_row, column=2 + i, value=h)
+    c.font = f(size=9, bold=True, color=C["white"])
+    c.fill = fill(CATEGORY_STYLE["calc"]["header_fill"])
+    c.border = BORDER_ALL
+# BI_Forecast!E37..E41 = Sales/Expenses/Profit/Inventory/Cash — see that
+# sheet's build code for the row-math derivation.
+for i, (metric, src_row) in enumerate([("Sales", 37), ("Expenses", 38), ("Profit", 39), ("Inventory", 40), ("Cash", 41)]):
+    r = forecast_summary_row + 1 + i
+    ws.cell(row=r, column=2, value=metric).font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+    vc = ws.cell(row=r, column=3, value=f"='BI_Forecast'!E{src_row}")
+    vc.font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+    vc.number_format = "#,##0"
+row = forecast_summary_row + 7
+
+# --- Alerts summary (direct cell references into BI_Alerts) ---------------
+ws.cell(row=row, column=2, value="ALERTS  (see 14_Data_Quality and BI_Alerts for full detail)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+alerts_summary_row = row
+for i, h in enumerate(["Alert", "Status", "Severity"]):
+    c = ws.cell(row=alerts_summary_row, column=2 + i, value=h)
+    c.font = f(size=9, bold=True, color=C["white"])
+    c.fill = fill(CATEGORY_STYLE["calc"]["header_fill"])
+    c.border = BORDER_ALL
+# BI_Alerts!B15..B26 = AlertName, E15..E26 = Status(live formula), F15..F26
+# = Severity — see that sheet's build code for the row-math derivation.
+for i in range(12):
+    r = alerts_summary_row + 1 + i
+    src = 15 + i
+    ws.cell(row=r, column=2, value=f"='BI_Alerts'!B{src}").font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+    ws.cell(row=r, column=3, value=f"='BI_Alerts'!E{src}").font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+    ws.cell(row=r, column=4, value=f"='BI_Alerts'!F{src}").font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+row = alerts_summary_row + 14
+
+# --- Business Insights (all 8, unlike Partner Dashboard's curated 4) ------
+ws.cell(row=row, column=2, value="BUSINESS INSIGHTS").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+# BI_Insights!D15..D22 = InsightText for INS-01..INS-08 — see that sheet's
+# build code for the row-math derivation.
+for i in range(8):
+    r = row + i
+    src = 15 + i
+    bullet = ws.cell(row=r, column=2, value=f"=\"•  \"&IFERROR('BI_Insights'!D{src},\"(resolves once Data Model is wired)\")")
+    bullet.font = f(size=9, color=C["text_gray"])
+    bullet.alignment = Alignment(wrap_text=True, vertical="top")
+    ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=11)
+    ws.row_dimensions[r].height = 16
+row += 9
+
+freeze_below_header(ws)
+protect_ws(ws)
+set_print_friendly(ws, last_col=12, last_row=140)
+ws.sheet_properties.tabColor = TAB_COLOR["dashboard"]
+
+
+# ============================================================================
 # 05_Products — Phase 3 addition: Product Cost Master (historical costing)
 # Appended below the Phase 1 dashboard placeholders (untouched — those are
 # still Phase 4 work). This table is the only genuinely new master-data input
@@ -592,6 +944,38 @@ active_flag_dv.errorTitle = "Invalid entry"
 active_flag_dv.error = "Choose Active or Inactive."
 ws.add_data_validation(active_flag_dv)
 active_flag_dv.add(f"R{pcm_data_row}:R501")
+
+freeze_below_header(ws)
+
+
+# ============================================================================
+# 08_Finance — Phase 5 addition: Budget Module (yearly & monthly)
+# Appended below 08_Finance's Phase 1 dashboard placeholders, same pattern as
+# 05_Products' Product Cost Master (Phase 3).
+# ============================================================================
+ws = wb["08_Finance"]
+budget_row = DASHBOARD_END_ROW["08_Finance"] + 1
+ws.cell(row=budget_row, column=2, value="BUDGET  (Phase 5 — green cells = type here; Budget ID is automatic)").font = f(size=12, bold=True, color=C["black"])
+budget_row += 1
+ws.cell(row=budget_row, column=2, value=(
+    "Leave Month blank for a YEARLY budget line (the whole year's target for that Year+Category); fill in "
+    "Month for a MONTHLY line. dax/MEASURES_PHASE5.md's [Budget Variance] / [Forecast vs Budget] measures "
+    "match Actuals to whichever grain a report is built at."
+)).font = f(size=8, italic=True, color=C["text_gray"])
+ws.row_dimensions[budget_row].height = 20
+budget_row += 2
+
+budget_header_row = budget_row
+budget_row = add_table(
+    ws, "tbl_Budget", budget_row, 2,
+    ["Budget ID", "Year", "Month", "Category", "Budget Amount", "Notes"],
+    "input",
+    example_row=["", 2026, "", "Revenue", 500000, "EXAMPLE — 2026 annual revenue budget"],
+)
+budget_data_row = budget_header_row + 1
+make_calc_column(ws, budget_data_row, 2, f'="BUD-"&TEXT(ROW()-{budget_header_row},"00000")')
+add_dropdown(ws, f"E{budget_data_row}:E501", "LookupBudgetCategory", "Category",
+             "Revenue, Expense, Marketing, Purchasing, or Profit — from the list on 15_Settings.")
 
 freeze_below_header(ws)
 
@@ -841,6 +1225,8 @@ VERSION_LOG_ROWS = [
      "Product Cost Master with historical/versioned costing (05_Products). Complete Manual Expenses module: category/subcategory lookups, duplicate-flag column, document references (10_Expenses). Capital module (11_Capital). Expanded Supplier Master + full Purchase Order engine — Header/Lines/Goods Receipt with a Draft-to-Closed status workflow (12_Suppliers). Every dropdown sourced from an editable lookup table on 15_Settings — no hardcoded values — with input prompts and stop-on-error messages. SKU/Collection dropdowns reference the live Shopify RAW_ tables, not a separate manual list. New hidden Data-Model-ready mirrors: DIM_Supplier, DIM_ProductCostHistory, FACT_CapitalTransactions, FACT_PurchaseOrderHeader, FACT_PurchaseOrderLines, FACT_GoodsReceipt. See /passress-mis/PHASE3_DOCUMENTATION.md. Still no dashboards, PivotTables, DAX, or financial statements."],
     ["4.0", "2026-07-26", "Phase 4 — Financial Calculation Engine (Data Model + DAX)",
      "Completed the RAW_/manual-table -> star-schema transformation layer Phase 1 sketched but Phase 2-3 left empty (power-query/star-schema/, 18 M files): DIM_Date (generated calendar, fiscal-year aware), DIM_Product/Customer/Location/Collection/Supplier/ProductCostHistory, and every FACT_ table, including historically-correct COGS resolved per order line via fn_GetEffectiveCost (SKU + order date -> the Product Cost Master row active on that date, never today's cost). Full DAX measure library (dax/MEASURES.md): P&L, Balance Sheet, Cash Flow, Product Profitability, Customer Metrics (incl. cohorts), Inventory Metrics, Executive KPIs, and a full time-intelligence layer (MTD/QTD/YTD/previous period/SPLY/rolling 30-90-365) applied to the headline measures with the reusable pattern documented for extending to any other. Built as composable base measures referenced by name from composite ones — no duplicated calculations. Reconciliation section validates Balance Sheet (Assets=Liabilities+Equity), Cash Position (direct vs. indirect), Net Sales (FACT vs. RAW Shopify totals), and refund/cost-coverage integrity. Accounts Payable is a documented proxy (no payment-status field exists yet — flagged, not silently assumed). See /passress-mis/dax/README.md and MEASURES.md. Still no dashboards, PivotTables, PivotCharts, or KPI cards."],
+    ["5.0", "2026-07-26", "Phase 5 — BI Application Layer (Dashboards, Insights, Alerts, Budget, Forecast)",
+     "02_Partner_Dashboard and 03_CEO_Dashboard rebuilt with real content: live KPI cards, a 12-month trend chart, and a Top-5-products list, all built with CUBEVALUE/CUBESET/CUBERANKEDMEMBER formulas reading the Data Model directly — no PivotTable required, so these resolve for real once the Data Model is wired, not just placeholders. BI_Insights and BI_Alerts (new hidden BI_ sheets): CUBEVALUE-driven auto-generated business insights and operational alerts, reusing Phase 2-4's own data-quality/reconciliation logic rather than duplicating it. BI_Forecast: rolling linear-trend forecasts (Excel's native FORECAST.LINEAR) for Sales/Expenses/Profit/Inventory/Cash, with an explicit Method column so a future AI forecasting layer is a swap-in, not a redesign. KPI Targets (15_Settings) and a yearly/monthly Budget module (08_Finance) with Actual-vs-Target and Actual/Forecast-vs-Budget DAX measures (dax/PHASE5_MEASURES_ADDENDUM.md, additive to Phase 4's MEASURES.md). Marketing-Ready Layer: 6 reserved, unconnected RAW_ tables (Meta/Google Analytics/Google Ads/TikTok/Email/Influencer) plus FACT_MarketingSpend, matching Phase 1's original placeholder pattern. FUTURE_AI_Insights: a reserved, unimplemented inventory of future AI features. Every dashboard now has a clickable breadcrumb back to 01_Home (title_bar's Home link). Global Filters panel (01_Home) prepares named filter cells for future slicer-equivalent filtering; native Excel Slicers still need real PivotTables (Phase 6) to attach to. Dashboards are landscape, fit-to-width, print-area-scoped for clean PDF export. See /passress-mis/PHASE5_DOCUMENTATION.md."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
@@ -882,9 +1268,55 @@ LOOKUPS = [
     ("tbl_LookupWarehouse", "Warehouse", "LookupWarehouse",
      ["Main Warehouse", "Retail Store", "Third-Party Logistics"]),
     ("tbl_LookupOwner", "Owner", "LookupOwner", ["Founder"]),
+    # --- Phase 5 additions ---
+    ("tbl_LookupBudgetPeriod", "Budget Period", "LookupBudgetPeriod", ["Monthly", "Yearly"]),
+    ("tbl_LookupBudgetCategory", "Budget Category", "LookupBudgetCategory",
+     ["Revenue", "Expense", "Marketing", "Purchasing", "Profit"]),
+    ("tbl_LookupAlertSeverity", "Alert Severity", "LookupAlertSeverity", ["Info", "Warning", "Critical"]),
 ]
 for table_name, header, list_name, values in LOOKUPS:
     row = add_lookup_table(ws, table_name, row, 2, header, values, list_name=list_name)
+
+row += 1
+# --- KPI Targets (Phase 5) --------------------------------------------------
+# Every dashboard's Actual-vs-Target cards read this table via
+# dax/MEASURES_PHASE5.md's [<KPI> Variance] / [<KPI> Attainment %] measures
+# (LOOKUPVALUE against KPIName) — edit a target here and every dashboard
+# using it updates on next refresh, nothing hardcoded per-dashboard.
+ws.cell(row=row, column=2, value="KPI TARGETS  (green Target Value cells = type here)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+kpi_targets_header_row = row
+row = add_table(
+    ws, "tbl_KPITargets", row, 2,
+    ["KPI Name", "Target Value", "Unit", "Period", "Notes"],
+    "input",
+    data_rows=[
+        ["Sales Target", 500000, "EGP", "Monthly", "Net Sales target"],
+        ["Margin Target", 0.55, "%", "Monthly", "Gross Margin % target"],
+        ["Orders Target", 400, "Count", "Monthly", "Order Count target"],
+        ["Inventory Target", 300000, "EGP", "Monthly", "Inventory Value ceiling (avoid overstock)"],
+        ["AOV Target", 1200, "EGP", "Monthly", "Average Order Value target"],
+        ["CAC Target", 150, "EGP", "Monthly", "Customer Acquisition Cost ceiling — needs Marketing-Ready spend data (Phase 6+) to compute Actual"],
+        ["ROAS Target", 4, "Ratio", "Monthly", "Return on Ad Spend target — needs Marketing-Ready spend data (Phase 6+) to compute Actual"],
+        ["Repeat Customer % Target", 0.30, "%", "Monthly", "Returning Customers / Customers Active target"],
+        ["Conversion Rate Target", 0.02, "%", "Monthly", "Needs Shopify session/traffic data (not fetched — Admin API has no storefront analytics) to compute Actual"],
+        ["Inventory Turnover Target", 6, "Ratio", "Yearly", "COGS / Average Inventory Value target"],
+    ],
+)
+kpi_targets_data_row = kpi_targets_header_row + 1
+# KPI Name/Unit/Period/Notes are reference columns (not meant for free
+# retyping) — restyle as calc/gray while keeping Target Value (col C) the
+# only green/editable one.
+KPI_TARGET_ROWS = 10
+for r_off in range(KPI_TARGET_ROWS):
+    rr = kpi_targets_data_row + r_off
+    for cc in (2, 4, 6):
+        cell = ws.cell(row=rr, column=cc)
+        cell.font = f(size=9, color=CATEGORY_STYLE["calc"]["body_font"])
+        cell.fill = fill(CATEGORY_STYLE["calc"]["body_fill"])
+        cell.protection = Protection(locked=True)
+add_dropdown(ws, f"E{kpi_targets_data_row}:E{kpi_targets_data_row + KPI_TARGET_ROWS - 1}", "LookupBudgetPeriod", "Period",
+             "Monthly or Yearly.")
 
 freeze_below_header(ws)
 protect_ws(ws)
@@ -1012,7 +1444,8 @@ def build_hidden_sheet(code, category, purpose, inputs, outputs, relationships, 
     set_col_widths(ws, [3] + [16] * len(headers))
     title_bar(ws, code, last_col=len(headers) + 1)
     row = doc_block(ws, purpose, inputs, outputs, relationships, future_source, last_col=len(headers) + 1)
-    table_category = {"raw": "shopify", "dim": "calc", "fact": "calc", "log": "calc"}[category]
+    table_category = {"raw": "shopify", "dim": "calc", "fact": "calc", "log": "calc",
+                       "marketing": "shopify", "bi": "calc", "future": "calc"}[category]
     add_table(ws, "tbl_" + code, row, 2, headers, table_category, example_row=example_row)
     freeze_below_header(ws)
     protect_ws(ws)
@@ -1213,6 +1646,180 @@ for s in LOG_SHEETS:
 
 
 # ============================================================================
+# Phase 5, item 6: Marketing-Ready Layer — empty tables + relationships for
+# future ad-platform APIs. NOT connected (no API calls, no tokens, no
+# scheduled refresh) — purely reserved structure, same spirit as Phase 1's
+# original RAW_ placeholders before Phase 2 connected them for real.
+# ============================================================================
+MARKETING_SHEETS = [
+    dict(code="RAW_MetaAds", channel="Meta Ads (Facebook/Instagram)"),
+    dict(code="RAW_GoogleAnalytics", channel="Google Analytics"),
+    dict(code="RAW_GoogleAds", channel="Google Ads"),
+    dict(code="RAW_TikTokAds", channel="TikTok Ads"),
+    dict(code="RAW_EmailMarketing", channel="Email Marketing (e.g. Klaviyo/Mailchimp)"),
+    dict(code="RAW_InfluencerCampaigns", channel="Influencer Campaigns"),
+]
+for s in MARKETING_SHEETS:
+    build_hidden_sheet(
+        s["code"], "marketing",
+        purpose=f"RESERVED, NOT CONNECTED — placeholder for future {s['channel']} API ingestion. No API calls, no credentials, no scheduled refresh exist for this yet.",
+        inputs=f"None yet. Future: {s['channel']}'s own API/export.",
+        outputs="Will feed FACT_MarketingSpend once connected.",
+        relationships="DateKey -> DIM_Date; Campaign -> a future DIM_Campaign (not yet built — see FACT_MarketingSpend's notes).",
+        future_source=f"{s['channel']} API — a future phase (6+), following the exact Power Query pattern power-query/README.md established for Shopify (auth via Extension.CurrentCredential, paginated fetch, incremental refresh).",
+        headers=["DateKey", "CampaignID", "CampaignName", "Spend", "Impressions", "Clicks", "Conversions", "Currency"],
+    )
+
+build_hidden_sheet(
+    "FACT_MarketingSpend", "marketing",
+    purpose="RESERVED, NOT CONNECTED — the unified cross-channel spend fact every RAW_<Channel>Ads table above would roll into, so DAX (CAC, ROAS) can query one table instead of six. Channel-specific fields (e.g. TikTok's video view counts) stay on each RAW_ table; only the common shape (spend, date, campaign, conversions) is unified here.",
+    inputs="Will be built from every RAW_MetaAds/RAW_GoogleAds/RAW_TikTokAds/etc. table above, once connected.",
+    outputs="dax/MEASURES.md's [CAC] and [ROAS] (currently unbuildable — see KPI Targets' notes on those two rows) will read from here.",
+    relationships="DateKey -> DIM_Date; ChannelName is a plain attribute (not worth its own dimension at this scale); CampaignID -> a future DIM_Campaign.",
+    future_source="Union of the RAW_<Channel>Ads tables above, in Power Query — a future phase (6+).",
+    headers=["DateKey", "ChannelName", "CampaignID", "CampaignName", "Spend", "Conversions", "Currency"],
+)
+
+
+# ============================================================================
+# Phase 5, item 12: AI-Ready Architecture — reserved structure only, per the
+# brief's explicit "No implementation yet." This is intentionally the
+# thinnest table in the workbook: a checklist of what a future AI layer would
+# populate, not a working feature.
+# ============================================================================
+build_hidden_sheet(
+    "FUTURE_AI_Insights", "future",
+    purpose="RESERVED, NOT IMPLEMENTED — placeholder inventory of AI-generated features a future phase could add (Executive Summary, Daily/Weekly/Monthly Summary, Recommendations, Anomaly Detection, Natural Language Q&A). No AI model is called anywhere in this workbook today.",
+    inputs="None yet. Future: the Data Model (dax/MEASURES.md) + BI_Insights/BI_Alerts (Phase 5's own rule-based versions of Summary/Anomaly-Detection, which an AI layer would eventually supersede or enrich, not duplicate).",
+    outputs="None yet.",
+    relationships="None yet.",
+    future_source="A future phase's AI integration (e.g. an LLM API call summarizing the Data Model's current state) — not scoped or estimated here.",
+    headers=["FeatureName", "Status", "Description", "WouldReplaceOrEnrich"],
+    example_row=["Executive Summary", "Not Implemented", "One-paragraph AI-written summary of the period's performance", "Enriches BI_Insights (adds narrative synthesis on top of the rule-based bullet points)"],
+)
+
+
+# ============================================================================
+# Phase 5, items 1 & 3: Executive Commentary Engine + Alerts Engine.
+# CUBEVALUE-driven — real formulas, not static text — so these actually
+# update as the Data Model's numbers change. Both stay hidden; dashboards
+# (Partner/CEO) surface a curated subset, not the raw tables.
+# ============================================================================
+ws = build_hidden_sheet(
+    "BI_Insights", "bi",
+    purpose="Auto-generated business insights, one row per insight, built from CUBEVALUE formulas reading dax/MEASURES.md's measures directly (no PivotTable needed). Recalculates on every workbook open/refresh — nothing here is typed by hand.",
+    inputs="The Data Model (dax/MEASURES.md) via CUBEVALUE/CUBESET/CUBERANKEDMEMBER.",
+    outputs="02_Partner_Dashboard and 03_CEO_Dashboard both surface a subset of these rows under 'Key Insights'.",
+    relationships="No Data Model relationship — reads the model via CUBE functions, same mechanism the dashboards themselves use.",
+    future_source="Already live: resolves for real once the Data Model + measures are wired per dax/README.md. Until then shows blank/0 — expected, not an error.",
+    headers=["InsightID", "Category", "InsightText", "Severity"],
+)
+insight_row = ws.max_row + 2
+ws.cell(row=insight_row, column=2, value="INSIGHT FORMULAS  (CUBEVALUE-driven — see dax/PHASE5_MEASURES_ADDENDUM.md for the exact measures each one reads)").font = f(size=9, bold=True, color=C["text_gray"])
+insight_row += 1
+INSIGHTS = [
+    ("INS-01", "Sales", '="Net Sales "&TEXT(ABS(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Revenue Growth % (YoY)]")),"0.0%")&IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Revenue Growth % (YoY)]")>=0," higher"," lower")&" than the same period last year."'),
+    ("INS-02", "Margin", '="Gross Margin is "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Gross Margin %]"),"0.0%")&", vs. a target of "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Margin Target]"),"0.0%")&"."'),
+    ("INS-03", "Customers", '="Customer Retention (month-over-month) is "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Customer Retention Rate (MoM)]"),"0.0%")&"."'),
+    ("INS-04", "Inventory", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Turnover]")<CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Turnover Target]"),"Inventory turnover is below target — stock may be moving slower than planned.","Inventory turnover is at or above target.")'),
+    ("INS-05", "Cash", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Cash Position (Direct, Cumulative)]")>0,"Cash position is healthy (positive).","Cash position is negative — review Reconciliation: Cash Variance before acting on this.")'),
+    ("INS-06", "Products", '="Best seller: "&CUBERANKEDMEMBER("ThisWorkbookDataModel","{[DIM_Product].[Title].Children}",1)&"."'),
+    ("INS-07", "Products", '="Weakest seller (with any sales): "&CUBERANKEDMEMBER("ThisWorkbookDataModel","{[DIM_Product].[Title].Children}",1)&" — see 05_Products for the full ranked list rather than relying on one row here."'),
+    ("INS-08", "Orders", '="Average Order Value is "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Average Order Value]"),"#,##0")&" EGP, vs. a target of "&TEXT(CUBEVALUE("ThisWorkbookDataModel","[Measures].[AOV Target]"),"#,##0")&" EGP."'),
+]
+for i, (iid, cat, formula) in enumerate(INSIGHTS):
+    r = insight_row + i
+    ws.cell(row=r, column=2, value=iid).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=3, value=cat).font = f(size=9, color=C["calc_body"])
+    tc = ws.cell(row=r, column=4, value=formula)
+    tc.font = f(size=9, color=C["calc_body"])
+    tc.alignment = Alignment(wrap_text=True)
+    ws.cell(row=r, column=5, value="Info").font = f(size=9, color=C["calc_body"])
+
+ws = build_hidden_sheet(
+    "BI_Alerts", "bi",
+    purpose="Auto-generated operational alerts, one row per alert type, built from CUBEVALUE formulas plus a few direct structural checks already computed elsewhere (Product Cost Master's Overlap Warning, Manual Expenses' Possible Duplicate) rather than re-deriving them — reuses, doesn't duplicate, Phase 2-4's own data-quality logic.",
+    inputs="The Data Model (dax/MEASURES.md) via CUBEVALUE; LOG_DataQuality; tbl_ProductCostMaster/tbl_ManualExpenses' existing flag columns.",
+    outputs="14_Data_Quality and 03_CEO_Dashboard both surface these under 'Alerts'.",
+    relationships="No Data Model relationship — reads via CUBE functions and direct cell/table references.",
+    future_source="Already live: resolves for real once the Data Model + measures are wired per dax/README.md.",
+    headers=["AlertID", "AlertName", "Condition", "Status", "Severity"],
+)
+alert_row = ws.max_row + 2
+ws.cell(row=alert_row, column=2, value="ALERT FORMULAS").font = f(size=9, bold=True, color=C["text_gray"])
+alert_row += 1
+ALERTS = [
+    ("ALT-01", "Low Inventory", "Inventory Value below target", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Value]")<CUBEVALUE("ThisWorkbookDataModel","[Measures].[Inventory Target]")*0.5,"TRIGGERED","OK")', "Warning"),
+    ("ALT-02", "Negative Margin", "Gross Margin % below 0", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Gross Margin %]")<0,"TRIGGERED","OK")', "Critical"),
+    ("ALT-03", "Products without Cost", "Order lines with no matching Product Cost Master row", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")&" lines)","OK")', "Warning"),
+    ("ALT-04", "Products without SKU", "RAW_Variants rows with a blank SKU", '=IF(COUNTIFS(tbl_RAW_Variants[SKU],"")>0,"TRIGGERED","OK")', "Warning"),
+    ("ALT-05", "Expenses without Category", "Manual Expenses rows with a blank Expense Category", '=IF(COUNTIFS(tbl_ManualExpenses[Expense Category],"")>0,"TRIGGERED","OK")', "Warning"),
+    ("ALT-06", "Duplicate Expenses", "Manual Expenses flagged Possible Duplicate", '=IF(COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")>0,"TRIGGERED ("&COUNTIF(tbl_ManualExpenses[Possible Duplicate],"Possible Duplicate")&")","OK")', "Info"),
+    ("ALT-07", "Inactive Products", "Product Cost Master rows marked Inactive with no Active replacement", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Lines Missing Cost]")>0,"REVIEW — see Products without Cost above (same root cause)","OK")', "Info"),
+    ("ALT-08", "Slow Moving Inventory", "SKUs below the Slow Moving threshold (dax/MEASURES.md)", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Slow Moving SKU Count]")&" SKUs)","OK")', "Info"),
+    ("ALT-09", "Dead Stock", "SKUs with zero sales in 180 days while still holding stock", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")>0,"TRIGGERED ("&CUBEVALUE("ThisWorkbookDataModel","[Measures].[Dead Stock SKU Count]")&" SKUs)","OK")', "Warning"),
+    ("ALT-10", "Missing Shopify Sync", "No successful refresh recorded", '=IF(COUNTROWS_PLACEHOLDER<>0,"TRIGGERED","OK")', "Critical"),
+    ("ALT-11", "Refresh Errors", "LOG_DataQuality rows with a WARNING status this refresh", '=IF(COUNTIF(tbl_LOG_DataQuality[Status],"WARNING*")>0,"TRIGGERED","OK")', "Warning"),
+    ("ALT-12", "Over Budget Expenses", "Operating Expenses exceed the Budget for the current period", '=IF(CUBEVALUE("ThisWorkbookDataModel","[Measures].[Operating Expenses]")>CUBEVALUE("ThisWorkbookDataModel","[Measures].[Expense Budget (Period)]"),"TRIGGERED","OK")', "Warning"),
+]
+for i, (aid, name, cond, formula, sev) in enumerate(ALERTS):
+    r = alert_row + i
+    ws.cell(row=r, column=2, value=aid).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=3, value=name).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=4, value=cond).font = f(size=8, italic=True, color=C["text_gray"])
+    ws.cell(row=r, column=5, value=formula).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=6, value=sev).font = f(size=9, color=C["calc_body"])
+# ALT-10 needs a real formula, not the placeholder above — LOG_RefreshHistory
+# is append-only (Phase 2), so "no rows in the last 2 days" is the signal.
+# Column 5 = Status (the live formula column — see the per-row loop above).
+alt10_row = alert_row + 9
+ws.cell(row=alt10_row, column=5, value='=IF(COUNTIFS(tbl_LOG_RefreshHistory[Timestamp],">="&TODAY()-2)=0,"TRIGGERED","OK")')
+
+
+# ============================================================================
+# Phase 5, item 5: Forecast Module — rolling-trend forecasts using Excel's
+# native FORECAST.LINEAR against a CUBEVALUE-pulled trailing-12-month
+# actuals series, per metric. "Allow future replacement with AI forecasting"
+# means: Method is its own labeled column, so a future phase can swap the
+# formula in that one column without touching anything else here.
+# ============================================================================
+ws = build_hidden_sheet(
+    "BI_Forecast", "bi",
+    purpose="Rolling-trend forecast for Sales, Expenses, Profit, Inventory, and Cash — Excel's native FORECAST.LINEAR projecting one period ahead from each metric's trailing 12-month actuals (pulled via CUBEVALUE). Deliberately simple (linear trend, not seasonality-aware) so it's easy to audit and easy to replace.",
+    inputs="The Data Model (dax/MEASURES.md) via CUBEVALUE, trailing 12 months.",
+    outputs="03_CEO_Dashboard's Forecast section.",
+    relationships="No Data Model relationship.",
+    future_source="AI forecasting — replace this table's Method/Formula columns with a call to an external forecasting service once one exists; every other column (Metric, ForecastPeriod, ForecastValue) stays the same shape so downstream references don't break.",
+    headers=["Metric", "Method", "ForecastPeriod", "ForecastValue"],
+)
+forecast_row = ws.max_row + 2
+ws.cell(row=forecast_row, column=2, value="TRAILING 12-MONTH ACTUALS (feeds the forecasts below)").font = f(size=9, bold=True, color=C["text_gray"])
+forecast_row += 1
+FORECAST_METRICS = [("Sales", "Net Sales"), ("Expenses", "Operating Expenses"), ("Profit", "Net Profit"),
+                     ("Inventory", "Inventory Value"), ("Cash", "Cash Position (Direct, Cumulative)")]
+trend_tops = {}
+for i, (label, measure) in enumerate(FORECAST_METRICS):
+    r = forecast_row + i * 4
+    trend_tops[label] = add_cube_trend_table(ws, r, 2, measure, n_months=12, label=f"{label} — trailing 12 months")
+forecast_calc_row = forecast_row + len(FORECAST_METRICS) * 4 + 1
+ws.cell(row=forecast_calc_row, column=2, value="FORECAST (next period, linear trend)").font = f(size=9, bold=True, color=C["text_gray"])
+forecast_calc_row += 1
+X_CONSTANT = "{1,2,3,4,5,6,7,8,9,10,11,12}"  # known_x's for FORECAST.LINEAR — an
+# inline array constant rather than a helper row, so nothing here risks
+# writing into row 1 (reserved by every sheet's title bar merge).
+for i, (label, measure) in enumerate(FORECAST_METRICS):
+    r = forecast_calc_row + i
+    _, value_row, first_col, last_col = trend_tops[label]
+    values_range = f"{get_column_letter(first_col)}{value_row}:{get_column_letter(last_col)}{value_row}"
+    ws.cell(row=r, column=2, value=label).font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=3, value="Linear Trend (FORECAST.LINEAR)").font = f(size=9, color=C["calc_body"])
+    ws.cell(row=r, column=4, value="Next Month").font = f(size=9, color=C["calc_body"])
+    fc = ws.cell(row=r, column=5, value=f'=_xlfn.FORECAST.LINEAR(13,{values_range},{X_CONSTANT})')
+    fc.font = f(size=9, bold=True, color=C["calc_body"])
+    fc.number_format = "#,##0"
+
+
+# ============================================================================
 # Tab order (creation order did not match required order — fix explicitly)
 # ============================================================================
 VISIBLE_ORDER = [
@@ -1224,7 +1831,9 @@ HIDDEN_ORDER = (
     [s["code"] for s in RAW_SHEETS] +
     [s["code"] for s in DIM_SHEETS] +
     [s["code"] for s in FACT_SHEETS] +
-    [s["code"] for s in LOG_SHEETS]
+    [s["code"] for s in LOG_SHEETS] +
+    [s["code"] for s in MARKETING_SHEETS] + ["FACT_MarketingSpend"] +
+    ["FUTURE_AI_Insights", "BI_Insights", "BI_Alerts", "BI_Forecast"]
 )
 FULL_ORDER = VISIBLE_ORDER + HIDDEN_ORDER
 assert sorted(FULL_ORDER) == sorted(wb.sheetnames), (

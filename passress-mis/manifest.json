@@ -45,9 +45,55 @@
     "FACT_PurchaseOrderLines",
     "FACT_GoodsReceipt",
     "LOG_RefreshHistory",
-    "LOG_DataQuality"
+    "LOG_DataQuality",
+    "RAW_MetaAds",
+    "RAW_GoogleAnalytics",
+    "RAW_GoogleAds",
+    "RAW_TikTokAds",
+    "RAW_EmailMarketing",
+    "RAW_InfluencerCampaigns",
+    "FACT_MarketingSpend",
+    "FUTURE_AI_Insights",
+    "BI_Insights",
+    "BI_Alerts",
+    "BI_Forecast"
   ],
   "named_ranges": [
+    {
+      "name": "FilterDateFrom",
+      "sheet": "01_Home",
+      "cell": "$B$32"
+    },
+    {
+      "name": "FilterDateTo",
+      "sheet": "01_Home",
+      "cell": "$D$32"
+    },
+    {
+      "name": "FilterCollection",
+      "sheet": "01_Home",
+      "cell": "$F$32"
+    },
+    {
+      "name": "FilterSKU",
+      "sheet": "01_Home",
+      "cell": "$H$32"
+    },
+    {
+      "name": "FilterSupplier",
+      "sheet": "01_Home",
+      "cell": "$J$32"
+    },
+    {
+      "name": "FilterLocation",
+      "sheet": "01_Home",
+      "cell": "$L$32"
+    },
+    {
+      "name": "FilterCampaign",
+      "sheet": "01_Home",
+      "cell": "$N$32"
+    },
     {
       "name": "SetCompanyName",
       "sheet": "15_Settings",
@@ -161,6 +207,21 @@
       "column": "Owner"
     },
     {
+      "name": "LookupBudgetPeriod",
+      "table": "tbl_LookupBudgetPeriod",
+      "column": "Budget Period"
+    },
+    {
+      "name": "LookupBudgetCategory",
+      "table": "tbl_LookupBudgetCategory",
+      "column": "Budget Category"
+    },
+    {
+      "name": "LookupAlertSeverity",
+      "table": "tbl_LookupAlertSeverity",
+      "column": "Alert Severity"
+    },
+    {
       "name": "SupplierNameList",
       "table": "tbl_SupplierMaster",
       "column": "Supplier Name"
@@ -186,6 +247,11 @@
       "table": "tbl_ProductCostMaster",
       "sheet": "05_Products",
       "ref": "B44:S45"
+    },
+    {
+      "table": "tbl_Budget",
+      "sheet": "08_Finance",
+      "ref": "B44:G45"
     },
     {
       "table": "tbl_ManualExpenses",
@@ -235,62 +301,82 @@
     {
       "table": "tbl_VersionLog",
       "sheet": "15_Settings",
-      "ref": "B36:E41"
+      "ref": "B36:E42"
     },
     {
       "table": "tbl_LookupExpenseCategory",
       "sheet": "15_Settings",
-      "ref": "B45:B55"
+      "ref": "B46:B56"
     },
     {
       "table": "tbl_LookupExpenseSubcategory",
       "sheet": "15_Settings",
-      "ref": "B57:B69"
+      "ref": "B58:B70"
     },
     {
       "table": "tbl_LookupCostCenter",
       "sheet": "15_Settings",
-      "ref": "B71:B76"
+      "ref": "B72:B77"
     },
     {
       "table": "tbl_LookupPaymentMethod",
       "sheet": "15_Settings",
-      "ref": "B78:B84"
+      "ref": "B79:B85"
     },
     {
       "table": "tbl_LookupCurrency",
       "sheet": "15_Settings",
-      "ref": "B86:B90"
+      "ref": "B87:B91"
     },
     {
       "table": "tbl_LookupSupplierType",
       "sheet": "15_Settings",
-      "ref": "B92:B100"
+      "ref": "B93:B101"
     },
     {
       "table": "tbl_LookupSupplierStatus",
       "sheet": "15_Settings",
-      "ref": "B102:B105"
+      "ref": "B103:B106"
     },
     {
       "table": "tbl_LookupCapitalTransactionType",
       "sheet": "15_Settings",
-      "ref": "B107:B109"
+      "ref": "B108:B110"
     },
     {
       "table": "tbl_LookupPOStatus",
       "sheet": "15_Settings",
-      "ref": "B111:B118"
+      "ref": "B112:B119"
     },
     {
       "table": "tbl_LookupWarehouse",
       "sheet": "15_Settings",
-      "ref": "B120:B123"
+      "ref": "B121:B124"
     },
     {
       "table": "tbl_LookupOwner",
       "sheet": "15_Settings",
-      "ref": "B125:B126"
+      "ref": "B126:B127"
+    },
+    {
+      "table": "tbl_LookupBudgetPeriod",
+      "sheet": "15_Settings",
+      "ref": "B129:B131"
+    },
+    {
+      "table": "tbl_LookupBudgetCategory",
+      "sheet": "15_Settings",
+      "ref": "B133:B138"
+    },
+    {
+      "table": "tbl_LookupAlertSeverity",
+      "sheet": "15_Settings",
+      "ref": "B140:B143"
+    },
+    {
+      "table": "tbl_KPITargets",
+      "sheet": "15_Settings",
+      "ref": "B147:F157"
     },
     {
       "table": "tbl_RAW_Orders",
@@ -436,6 +522,61 @@
       "table": "tbl_LOG_DataQuality",
       "sheet": "LOG_DataQuality",
       "ref": "B11:G12"
+    },
+    {
+      "table": "tbl_RAW_MetaAds",
+      "sheet": "RAW_MetaAds",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_RAW_GoogleAnalytics",
+      "sheet": "RAW_GoogleAnalytics",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_RAW_GoogleAds",
+      "sheet": "RAW_GoogleAds",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_RAW_TikTokAds",
+      "sheet": "RAW_TikTokAds",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_RAW_EmailMarketing",
+      "sheet": "RAW_EmailMarketing",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_RAW_InfluencerCampaigns",
+      "sheet": "RAW_InfluencerCampaigns",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_FACT_MarketingSpend",
+      "sheet": "FACT_MarketingSpend",
+      "ref": "B11:H12"
+    },
+    {
+      "table": "tbl_FUTURE_AI_Insights",
+      "sheet": "FUTURE_AI_Insights",
+      "ref": "B11:E12"
+    },
+    {
+      "table": "tbl_BI_Insights",
+      "sheet": "BI_Insights",
+      "ref": "B11:E12"
+    },
+    {
+      "table": "tbl_BI_Alerts",
+      "sheet": "BI_Alerts",
+      "ref": "B11:F12"
+    },
+    {
+      "table": "tbl_BI_Forecast",
+      "sheet": "BI_Forecast",
+      "ref": "B11:E12"
     }
   ]
 }
