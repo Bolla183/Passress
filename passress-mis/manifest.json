@@ -1,0 +1,236 @@
+{
+  "visible_sheets": [
+    "01_Home",
+    "02_Partner_Dashboard",
+    "03_CEO_Dashboard",
+    "04_Sales",
+    "05_Products",
+    "06_Customers",
+    "07_Inventory",
+    "08_Finance",
+    "09_Profitability",
+    "10_Expenses",
+    "11_Capital",
+    "12_Suppliers",
+    "13_Marketing",
+    "14_Data_Quality",
+    "15_Settings"
+  ],
+  "hidden_sheets": [
+    "RAW_Orders",
+    "RAW_OrderLines",
+    "RAW_Refunds",
+    "RAW_Products",
+    "RAW_Variants",
+    "RAW_InventoryLevels",
+    "RAW_Customers",
+    "RAW_Collections",
+    "DIM_Date",
+    "DIM_Product",
+    "DIM_Customer",
+    "DIM_Location",
+    "DIM_Collection",
+    "DIM_Parameters",
+    "FACT_OrderLines",
+    "FACT_Refunds",
+    "FACT_InventoryMovements",
+    "FACT_Payments",
+    "FACT_ManualExpenses",
+    "LOG_RefreshHistory",
+    "LOG_DataQuality"
+  ],
+  "named_ranges": [
+    {
+      "name": "SetCompanyName",
+      "sheet": "15_Settings",
+      "cell": "$C$13"
+    },
+    {
+      "name": "SetBaseCurrency",
+      "sheet": "15_Settings",
+      "cell": "$C$14"
+    },
+    {
+      "name": "SetReportingCurrency",
+      "sheet": "15_Settings",
+      "cell": "$C$15"
+    },
+    {
+      "name": "SetFiscalYearStartMonth",
+      "sheet": "15_Settings",
+      "cell": "$C$16"
+    },
+    {
+      "name": "SetDefaultVATRate",
+      "sheet": "15_Settings",
+      "cell": "$C$17"
+    },
+    {
+      "name": "SetTargetGrossMargin",
+      "sheet": "15_Settings",
+      "cell": "$C$18"
+    },
+    {
+      "name": "SetShopifyStoreDomain",
+      "sheet": "15_Settings",
+      "cell": "$C$23"
+    },
+    {
+      "name": "SetShopifyAPIVersion",
+      "sheet": "15_Settings",
+      "cell": "$C$24"
+    },
+    {
+      "name": "SetLookbackDaysIncrementalRefresh",
+      "sheet": "15_Settings",
+      "cell": "$C$25"
+    }
+  ],
+  "tables": [
+    {
+      "table": "tbl_ManualExpenses",
+      "sheet": "10_Expenses",
+      "ref": "B17:H18"
+    },
+    {
+      "table": "tbl_CapitalTransactions",
+      "sheet": "11_Capital",
+      "ref": "B17:F18"
+    },
+    {
+      "table": "tbl_SupplierMaster",
+      "sheet": "12_Suppliers",
+      "ref": "B17:G18"
+    },
+    {
+      "table": "tbl_PurchaseOrders",
+      "sheet": "12_Suppliers",
+      "ref": "B22:G23"
+    },
+    {
+      "table": "tbl_ValidationRules",
+      "sheet": "14_Data_Quality",
+      "ref": "B17:E18"
+    },
+    {
+      "table": "tbl_RefreshStatusSummary",
+      "sheet": "14_Data_Quality",
+      "ref": "B22:E23"
+    },
+    {
+      "table": "tbl_ChartOfAccounts",
+      "sheet": "15_Settings",
+      "ref": "B29:F30"
+    },
+    {
+      "table": "tbl_VersionLog",
+      "sheet": "15_Settings",
+      "ref": "B34:E35"
+    },
+    {
+      "table": "tbl_RAW_Orders",
+      "sheet": "RAW_Orders",
+      "ref": "B11:N12"
+    },
+    {
+      "table": "tbl_RAW_OrderLines",
+      "sheet": "RAW_OrderLines",
+      "ref": "B11:K12"
+    },
+    {
+      "table": "tbl_RAW_Refunds",
+      "sheet": "RAW_Refunds",
+      "ref": "B11:H12"
+    },
+    {
+      "table": "tbl_RAW_Products",
+      "sheet": "RAW_Products",
+      "ref": "B11:H12"
+    },
+    {
+      "table": "tbl_RAW_Variants",
+      "sheet": "RAW_Variants",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_RAW_InventoryLevels",
+      "sheet": "RAW_InventoryLevels",
+      "ref": "B11:E12"
+    },
+    {
+      "table": "tbl_RAW_Customers",
+      "sheet": "RAW_Customers",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_RAW_Collections",
+      "sheet": "RAW_Collections",
+      "ref": "B11:D12"
+    },
+    {
+      "table": "tbl_DIM_Date",
+      "sheet": "DIM_Date",
+      "ref": "B11:L12"
+    },
+    {
+      "table": "tbl_DIM_Product",
+      "sheet": "DIM_Product",
+      "ref": "B11:J12"
+    },
+    {
+      "table": "tbl_DIM_Customer",
+      "sheet": "DIM_Customer",
+      "ref": "B11:H12"
+    },
+    {
+      "table": "tbl_DIM_Location",
+      "sheet": "DIM_Location",
+      "ref": "B11:F12"
+    },
+    {
+      "table": "tbl_DIM_Collection",
+      "sheet": "DIM_Collection",
+      "ref": "B11:E12"
+    },
+    {
+      "table": "tbl_DIM_Parameters",
+      "sheet": "DIM_Parameters",
+      "ref": "B11:C12"
+    },
+    {
+      "table": "tbl_FACT_OrderLines",
+      "sheet": "FACT_OrderLines",
+      "ref": "B11:O12"
+    },
+    {
+      "table": "tbl_FACT_Refunds",
+      "sheet": "FACT_Refunds",
+      "ref": "B11:F12"
+    },
+    {
+      "table": "tbl_FACT_InventoryMovements",
+      "sheet": "FACT_InventoryMovements",
+      "ref": "B11:H12"
+    },
+    {
+      "table": "tbl_FACT_Payments",
+      "sheet": "FACT_Payments",
+      "ref": "B11:H12"
+    },
+    {
+      "table": "tbl_FACT_ManualExpenses",
+      "sheet": "FACT_ManualExpenses",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_LOG_RefreshHistory",
+      "sheet": "LOG_RefreshHistory",
+      "ref": "B11:I12"
+    },
+    {
+      "table": "tbl_LOG_DataQuality",
+      "sheet": "LOG_DataQuality",
+      "ref": "B11:G12"
+    }
+  ]
+}
