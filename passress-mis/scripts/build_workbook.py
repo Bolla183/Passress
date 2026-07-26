@@ -20,7 +20,7 @@ from openpyxl.styles.protection import Protection
 from openpyxl.worksheet.dimensions import RowDimension
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.comments import Comment
-from openpyxl.chart import LineChart, Reference
+from openpyxl.chart import LineChart, BarChart, Reference
 from openpyxl.formatting.rule import FormulaRule
 
 FONT_NAME = "Segoe UI"
@@ -459,6 +459,54 @@ def add_native_line_chart(ws, anchor_cell, title, cats_ref, data_ref, height_cm=
     return chart
 
 
+def add_native_multiseries_line_chart(ws, anchor_cell, title, cats_ref, data_ref, series_names, height_cm=7, width_cm=17):
+    """Same mechanism as add_native_line_chart, generalized to N series in
+    one chart (e.g. P&L Trend: Net Sales / Operating Expenses / Net Profit
+    together) — data_ref must span one row per series, from_rows=True tells
+    openpyxl to read it that way rather than one series per column."""
+    chart = LineChart()
+    chart.title = title
+    chart.style = 2
+    chart.y_axis.majorGridlines = None
+    chart.height = height_cm
+    chart.width = width_cm
+    chart.add_data(data_ref, titles_from_data=False, from_rows=True)
+    chart.set_categories(cats_ref)
+    line_colors = [C["black"], C["shopify_body"], C["input_body"]]
+    for i, s in enumerate(chart.series):
+        s.graphicalProperties.line.solidFill = line_colors[i % len(line_colors)]
+        s.graphicalProperties.line.width = 18000
+        s.smooth = False
+    from openpyxl.chart.series import SeriesLabel
+    for i, name in enumerate(series_names):
+        if i < len(chart.series):
+            chart.series[i].tx = SeriesLabel(v=name)
+    chart.legend.position = "b"
+    ws.add_chart(chart, anchor_cell)
+    return chart
+
+
+def add_native_bar_chart(ws, anchor_cell, title, cats_ref, data_ref, height_cm=7, width_cm=17):
+    """Same mechanism as add_native_line_chart with openpyxl's BarChart
+    instead of LineChart — a ranked list (e.g. Top 10 Products) reads
+    better as bars than as a line, and BarChart is just as natively
+    writable by openpyxl as LineChart already was."""
+    chart = BarChart()
+    chart.type = "col"
+    chart.title = title
+    chart.style = 10
+    chart.y_axis.majorGridlines = None
+    chart.height = height_cm
+    chart.width = width_cm
+    chart.add_data(data_ref, titles_from_data=False)
+    chart.set_categories(cats_ref)
+    if chart.series:
+        chart.series[0].graphicalProperties.solidFill = C["dark_gray"]
+    chart.legend = None
+    ws.add_chart(chart, anchor_cell)
+    return chart
+
+
 def add_cube_top_n(ws, top_row, top_col, title, dim_table, dim_attribute, measure_name, n=5, ascending=False):
     """CUBESET + CUBERANKEDMEMBER + CUBEVALUE: a live 'Top N by measure' list
     with no PivotTable — e.g. Top 5 best-selling products. ascending=True for
@@ -486,6 +534,182 @@ def add_cube_top_n(ws, top_row, top_col, title, dim_table, dim_attribute, measur
 
 def style_calc_font():
     return CATEGORY_STYLE["calc"]["body_font"]
+
+
+# ============================================================================
+# Phase 8: completing 04/05/06/07/08/09/13's placeholder KPI cards, charts,
+# and "PivotTable" detail sections using ONLY existing DAX measures and the
+# existing CUBEVALUE/CUBESET/CUBERANKEDMEMBER mechanism Phase 5 established
+# (no PivotTables were ever writable via openpyxl — that hasn't changed).
+# Three small additions to that same mechanism, not a new architecture:
+# ============================================================================
+
+def add_cube_rank1_name(ws, helper_row, helper_col, dim_table, dim_attribute, measure_name, ascending=False, label="Set"):
+    """Writes a CUBESET helper cell (ordered by an existing measure) and
+    returns a CUBERANKEDMEMBER formula string for its rank-1 member — e.g.
+    'Best Seller' as a single name, not a ranked list. Same fix pattern as
+    BI_Insights' INS-06/07 (Phase 7): CUBERANKEDMEMBER against a raw
+    unordered set has no defined rank-1 member, so the CUBESET helper cell
+    (which DOES support ordering) is required, not optional."""
+    order = "BASC" if ascending else "BDESC"
+    set_formula = (
+        f'=CUBESET("{CUBE_CONN}","{{[{dim_table}].[{dim_attribute}].Children}}","{label}",'
+        f'"{order}","[Measures].[{measure_name}]")'
+    )
+    cell = ws.cell(row=helper_row, column=helper_col, value=set_formula)
+    cell.font = f(size=7, color=C["med_gray"])
+    set_ref = f"${get_column_letter(helper_col)}${helper_row}"
+    return f'=CUBERANKEDMEMBER("{CUBE_CONN}",{set_ref},1)'
+
+
+def add_cube_breakdown_table(ws, top_row, top_col, title, dim_table, dim_attribute, measures, n=8, ascending=False, order_measure=None):
+    """Generalizes add_cube_top_n to more than one measure column — the
+    'PivotTable' substitute for a dimension-by-measure(s) breakdown (Sales
+    by Product, Margin by Collection, Stock by Location, etc.). Same three
+    CUBE functions, same single-shared-CUBESET-per-table pattern, just N
+    value columns instead of 1. measures: list of (label, measure_name,
+    numfmt) — numfmt optional, defaults to '#,##0'. order_measure defaults
+    to the first measure in the list. Returns next free row."""
+    ws.cell(row=top_row, column=top_col, value=title).font = f(size=10, bold=True, color=C["text_gray"])
+    header_row = top_row + 1
+    dim_header = ws.cell(row=header_row, column=top_col, value=dim_attribute)
+    dim_header.font = f(size=8, bold=True, color=C["white"])
+    dim_header.fill = fill(CATEGORY_STYLE["calc"]["header_fill"])
+    for j, m in enumerate(measures):
+        mlabel = m[0]
+        hc = ws.cell(row=header_row, column=top_col + 1 + j, value=mlabel)
+        hc.font = f(size=8, bold=True, color=C["white"])
+        hc.fill = fill(CATEGORY_STYLE["calc"]["header_fill"])
+
+    order_by = order_measure or measures[0][1]
+    order = "BASC" if ascending else "BDESC"
+    helper_col = top_col + 1 + len(measures) + 2
+    set_formula = (
+        f'=CUBESET("{CUBE_CONN}","{{[{dim_table}].[{dim_attribute}].Children}}","{title}",'
+        f'"{order}","[Measures].[{order_by}]")'
+    )
+    set_cell = ws.cell(row=top_row, column=helper_col, value=set_formula)
+    set_cell.font = f(size=7, color=C["med_gray"])
+    set_ref = f"${get_column_letter(helper_col)}${top_row}"
+
+    for i in range(n):
+        r = header_row + 1 + i
+        member_ref = f'CUBERANKEDMEMBER("{CUBE_CONN}",{set_ref},{i + 1})'
+        nc = ws.cell(row=r, column=top_col, value=f"={member_ref}")
+        nc.font = f(size=9, color=style_calc_font())
+        for j, m in enumerate(measures):
+            _, measure_name, *rest = m
+            numfmt = rest[0] if rest else "#,##0"
+            vc = ws.cell(row=r, column=top_col + 1 + j,
+                         value=f'=CUBEVALUE("{CUBE_CONN}","[Measures].[{measure_name}]",{member_ref})')
+            vc.font = f(size=9, color=style_calc_font())
+            vc.number_format = numfmt
+    return header_row + n + 2
+
+
+def add_statement_table(ws, top_row, top_col, title, rows):
+    """P&L Statement / Cash Flow Statement 'PivotTable' substitute: every
+    line is already a named, existing measure (dax/MEASURES.md §1 and §3
+    literally are this table, as prose) — this just turns that documented
+    map into working CUBEVALUE formulas, one per line, unfiltered
+    (grand-total / all-time). rows: list of (label, measure_name, numfmt)."""
+    ws.cell(row=top_row, column=top_col, value=title).font = f(size=10, bold=True, color=C["text_gray"])
+    r = top_row + 1
+    for label, measure_name, numfmt in rows:
+        lc = ws.cell(row=r, column=top_col, value=label)
+        lc.font = f(size=9, color=style_calc_font())
+        vc = ws.cell(row=r, column=top_col + 2, value=cube_measure(measure_name))
+        vc.font = f(size=9, bold=True, color=style_calc_font())
+        vc.number_format = numfmt
+        r += 1
+    return r + 1
+
+
+def add_gap_box(ws, row, col, width, height, item_label, reason):
+    """The honest alternative to add_placeholder_box for an item that
+    genuinely cannot be built from what already exists — states which
+    PivotTable/chart/KPI this was meant to be AND the specific technical
+    reason (missing measure, missing dimension, or a CUBE-function/MDX
+    pattern that can't safely represent a 2D matrix), instead of a generic
+    'not yet built.'"""
+    r2, c2 = row + height - 1, col + width - 1
+    ws.merge_cells(start_row=row, start_column=col, end_row=r2, end_column=c2)
+    cell = ws.cell(row=row, column=col, value=f"[ {item_label} — Not implementable: {reason} ]")
+    cell.font = f(size=8, italic=True, color=C["text_gray"])
+    cell.fill = fill(C["light_gray"])
+    cell.alignment = Alignment(vertical="center", horizontal="center", wrap_text=True)
+    dashed = Side(style="dashed", color=C["border_gray"])
+    box_border = Border(left=dashed, right=dashed, top=dashed, bottom=dashed)
+    for rr in range(row, r2 + 1):
+        for cc in range(col, c2 + 1):
+            ws.cell(row=rr, column=cc).border = box_border
+            if ws.cell(row=rr, column=cc).fill.fgColor.rgb in (None, "00000000"):
+                ws.cell(row=rr, column=cc).fill = fill(C["light_gray"])
+    return r2 + 2
+
+
+def add_kpi_row_v2(ws, row, cards, col_start=2, card_width=2, height_rows=3):
+    """Like add_cube_kpi_row, but each card is a dict so a card can be a
+    live CUBEVALUE measure, a rank-1-name formula (add_cube_rank1_name),
+    OR a genuine gap ('N/A', reason recorded for the sheet's Known Gaps
+    note rather than silently blank). cards: list of dicts with keys
+    label, formula (a full '=...' string, or None for a gap), numfmt
+    (optional), reason (required when formula is None).
+    Returns (next_free_row, next_free_col, gaps) where gaps is a list of
+    (label, reason) for every card that couldn't be wired."""
+    col = col_start
+    top = row
+    bottom = row + height_rows - 1
+    gaps = []
+    for card in cards:
+        label = card["label"]
+        formula = card.get("formula")
+        numfmt = card.get("numfmt", "#,##0")
+        left, right = col, col + card_width - 1
+        ws.merge_cells(start_row=top, start_column=left, end_row=top, end_column=right)
+        lab = ws.cell(row=top, column=left, value=label.upper())
+        lab.font = f(size=8, bold=True, color=C["med_gray"])
+        lab.alignment = Alignment(vertical="bottom", horizontal="left", indent=1)
+
+        ws.merge_cells(start_row=top + 1, start_column=left, end_row=bottom, end_column=right)
+        if formula is not None:
+            val = ws.cell(row=top + 1, column=left, value=formula)
+            val.number_format = numfmt
+        else:
+            val = ws.cell(row=top + 1, column=left, value="N/A")
+            gaps.append((label, card["reason"]))
+        val.font = f(size=20 if formula is None or numfmt != "@" else 13, bold=True, color=C["white"])
+        val.alignment = Alignment(vertical="center", horizontal="left", indent=1)
+        val.protection = Protection(locked=True)
+
+        for rr in range(top, bottom + 1):
+            for cc in range(left, right + 1):
+                ws.cell(row=rr, column=cc).fill = fill(C["kpi_fill"])
+        ws.row_dimensions[top].height = 15
+        col += card_width
+    for rr in range(top + 1, bottom + 1):
+        ws.row_dimensions[rr].height = 22
+    return bottom + 2, col, gaps
+
+
+def add_known_gaps_note(ws, row, col, gaps, last_col=12):
+    """Renders every KPI-card gap collected by add_kpi_row_v2 as visible
+    text (not just a hover comment) — required reading item 3 of your
+    instruction: every unimplemented placeholder must be documented with
+    the exact technical reason, in the workbook itself, not only in a
+    Python comment nobody using Excel will ever see."""
+    if not gaps:
+        return row
+    ws.cell(row=row, column=col, value="KNOWN GAPS ON THIS SHEET  (documented, not silently missing)").font = f(size=9, bold=True, color=C["text_gray"])
+    row += 1
+    for label, reason in gaps:
+        c = ws.cell(row=row, column=col, value=f"{label}: {reason}")
+        c.font = f(size=8, italic=True, color=C["text_gray"])
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=last_col)
+        ws.row_dimensions[row].height = 24
+        row += 1
+    return row + 1
 
 
 # ============================================================================
@@ -639,132 +863,431 @@ ws.sheet_properties.tabColor = TAB_COLOR["nav"]
 
 
 # ============================================================================
-# Generic dashboard / report sheet builder (02-09, 13)
+# 04/05/06/07/08/09/13 — Phase 8: completing the placeholder KPI cards,
+# charts, and "PivotTable" detail sections these sheets shipped with since
+# Phase 1, using only dax/MEASURES.md's existing measures and the same
+# CUBEVALUE/CUBESET/CUBERANKEDMEMBER mechanism established in Phase 5.
+# Explicit scope per your instruction: no new measures, no new KPIs, no
+# architecture changes. Every item below is either (a) wired to an existing
+# measure, (b) a CUBE-function breakdown table standing in for a real
+# PivotTable (openpyxl still can't write one — that hasn't changed since
+# Phase 1), or (c) left as an add_gap_box with the specific technical reason
+# it can't be built from what already exists. 02_Partner_Dashboard and
+# 03_CEO_Dashboard remain Phase 5's bespoke builds, below, unchanged.
 # ============================================================================
-DASHBOARD_SHEETS = [
-    # 02_Partner_Dashboard and 03_CEO_Dashboard were generic placeholders
-    # here through Phase 4 — Phase 5 gives them real, bespoke builds (below,
-    # after this loop) per the brief's explicit design for each, so they're
-    # no longer part of this generic loop.
-    dict(
-        code="04_Sales", title="Sales",
-        purpose="Sales performance detail — orders, revenue, discounts, and returns by period, product, and channel.",
-        inputs="FACT_OrderLines, FACT_Refunds, DIM_Date, DIM_Product, DIM_Collection.",
-        outputs="Sales KPI row, Sales-by-Date / Sales-by-Product / Sales-by-Collection pivots, order list.",
-        relationships="FACT_OrderLines links to DIM_Date/DIM_Product/DIM_Collection; FACT_Refunds links to FACT_OrderLines.",
-        future_source="RAW_Orders / RAW_OrderLines via Power Query — Phase 2.",
-        kpis=["Gross Sales", "Discounts", "Returns", "Net Sales"],
-        charts=["Sales Trend (Chart)"],
-        pivots=["Sales by Date (PivotTable)", "Sales by Product (PivotTable)", "Sales by Collection (PivotTable)", "Order List (Table)"],
-    ),
-    dict(
-        code="05_Products", title="Products",
-        purpose="Product-level performance dashboard placeholders (Phase 4) PLUS, as of Phase 3, the Product Cost Master — the workbook's historical/versioned SKU costing table.",
-        inputs="DIM_Product, FACT_OrderLines (Phase 4 dashboard). RAW_Variants, RAW_Collections (Phase 3 Product Cost Master dropdowns).",
-        outputs="Product KPI row, Top Products table, Product Margin table, Variant Detail table (Phase 4). tbl_ProductCostMaster feeding DIM_ProductCostHistory (Phase 3, live now).",
-        relationships="DIM_Product links to FACT_OrderLines on ProductKey (Phase 4). tbl_ProductCostMaster[SKU] links to RAW_Variants[SKU]; Phase 4's COGS calculation will further match SKU + order date against Effective From/To Date.",
-        future_source="RAW_Products / RAW_Variants via Power Query — Phase 2 (dashboard). Product Cost Master is manual entry today — see PHASE3_DOCUMENTATION.md §1.",
-        kpis=["Active SKUs", "Best Seller", "Avg Margin %", "Slow Movers"],
-        charts=["Top 10 Products (Chart)"],
-        pivots=["Product Margin (PivotTable)", "Variant Detail (PivotTable)"],
-    ),
-    dict(
-        code="06_Customers", title="Customers",
-        purpose="Customer analytics — cohorts, lifetime value, repeat-purchase rate, and geography.",
-        inputs="DIM_Customer, FACT_OrderLines.",
-        outputs="Customer KPI row, Cohort table, Top Customers table, Geography breakdown.",
-        relationships="DIM_Customer links to FACT_OrderLines on CustomerKey.",
-        future_source="RAW_Customers via Power Query — Phase 2.",
-        kpis=["Total Customers", "New Customers", "Repeat Rate %", "Avg LTV"],
-        charts=["Cohort Trend (Chart)"],
-        pivots=["Cohort Table (PivotTable)", "Top Customers (PivotTable)", "Geography (PivotTable)"],
-    ),
-    dict(
-        code="07_Inventory", title="Inventory",
-        purpose="Stock levels, valuation, turnover, and reorder risk.",
-        inputs="FACT_InventoryMovements, DIM_Product, DIM_Location.",
-        outputs="Inventory KPI row, Stock-by-Location table, Low Stock list, Valuation table.",
-        relationships="FACT_InventoryMovements links to DIM_Product and DIM_Location.",
-        future_source="RAW_InventoryLevels via Power Query — Phase 2.",
-        kpis=["Inventory Value", "Units on Hand", "Inventory Turns", "Stockout Risk"],
-        charts=["Stock Trend (Chart)"],
-        pivots=["Stock by Location (PivotTable)", "Low Stock List (Table)", "Inventory Valuation (PivotTable)"],
-    ),
-    dict(
-        code="08_Finance", title="Finance",
-        purpose="Core management-basis financial statements — Profit & Loss and Cash Flow summary (not audited books).",
-        inputs="FACT_OrderLines, FACT_ManualExpenses, FACT_Payments, Chart of Accounts mapping (15_Settings).",
-        outputs="Finance KPI row, P&L Statement, Cash Flow Statement.",
-        relationships="Combines Shopify-sourced facts with manually entered FACT_ManualExpenses, categorized via the Chart of Accounts mapping table.",
-        future_source="Data Model measures, built on top of RAW_Orders + FACT_ManualExpenses — Phase 3/4.",
-        kpis=["Net Sales", "Total Expenses", "Net Profit", "Cash Balance"],
-        charts=["P&L Trend (Chart)"],
-        pivots=["P&L Statement (PivotTable)", "Cash Flow Statement (PivotTable)"],
-    ),
-    dict(
-        code="09_Profitability", title="Profitability",
-        purpose="Margin analysis — gross margin, contribution margin, and profitability by product, collection, and channel.",
-        inputs="FACT_OrderLines, DIM_Product, DIM_Collection.",
-        outputs="Profitability KPI row, Margin-by-Product / Margin-by-Collection tables, Margin Trend chart.",
-        relationships="FACT_OrderLines carries both revenue and COGS at line grain, enabling margin by any dimension.",
-        future_source="Data Model measures — Phase 3/4.",
-        kpis=["Gross Margin %", "Contribution Margin %", "Best Margin Category", "Worst Margin Category"],
-        charts=["Margin Trend (Chart)"],
-        pivots=["Margin by Product (PivotTable)", "Margin by Collection (PivotTable)"],
-    ),
-    dict(
-        code="13_Marketing", title="Marketing",
-        purpose="Campaign and discount-code performance tracking; future home for ad-spend ROAS once integrated.",
-        inputs="DIM_Collection, FACT_OrderLines (discount amounts). Future: FACT_AdSpend.",
-        outputs="Marketing KPI row, Campaign Performance table, Discount Code Usage table.",
-        relationships="FACT_OrderLines[DiscountAmount] rolls up by campaign/discount code.",
-        future_source="RAW_Orders discount fields via Power Query — Phase 2. Meta/TikTok Ads API — future integration.",
-        kpis=["Total Discount Given", "Active Campaigns", "Discount Rate %", "ROAS (future)"],
-        charts=["Discount Trend (Chart)"],
-        pivots=["Campaign Performance (PivotTable)", "Discount Code Usage (PivotTable)"],
-    ),
-]
-
 DASHBOARD_END_ROW = {}
-for spec in DASHBOARD_SHEETS:
-    ws = wb.create_sheet(spec["code"])
-    ws.sheet_view.showGridLines = False
-    set_col_widths(ws, [3] + [13] * 11)
-    title_bar(ws, spec["title"], last_col=12)
-    row = doc_block(ws, spec["purpose"], spec["inputs"], spec["outputs"], spec["relationships"], spec["future_source"], last_col=12)
-    row, _ = add_kpi_row(ws, row, spec["kpis"], col_start=2, card_width=2)
-    row += 1
-    ws.cell(row=row, column=2, value="TRENDS & BREAKDOWNS").font = f(size=10, bold=True, color=C["text_gray"])
-    row += 1
-    # "Not yet built" rather than a specific past phase name: every phase
-    # from 4 through 6 explicitly deferred this sheet's charts/PivotTables
-    # (Phase 4's own brief said "do not build dashboards yet"; Phase 5 named
-    # only Partner/CEO Dashboard for a bespoke rebuild; Phase 6 named none of
-    # these). The original "built in Phase 4" wording became actively wrong
-    # once Phase 4 finished without building it — fixed in the Phase 7
-    # production-readiness review. Building a real PivotTable/PivotChart here
-    # needs Excel itself (openpyxl can't write either reliably) — see
-    # dax/README.md for the manual build steps once the Data Model is wired.
-    NOT_YET_BUILT = "Not yet built — see dax/README.md"
-    chart_row = row
-    for ch in spec["charts"]:
-        row = add_placeholder_box(ws, chart_row, 2, 10, 8, ch, phase=NOT_YET_BUILT)
-        chart_row = row
-    row += 1
-    ws.cell(row=row, column=2, value="DETAIL (PIVOTTABLES)").font = f(size=10, bold=True, color=C["text_gray"])
-    row += 1
-    piv_col = 2
-    for pv in spec["pivots"]:
-        row2 = add_placeholder_box(ws, row, piv_col, 5, 10, pv, phase=NOT_YET_BUILT)
-        piv_col += 5
-        if piv_col > 10:
-            piv_col = 2
-            row = row2
-    row = max(row, row2) + 1
-    freeze_below_header(ws)
-    protect_ws(ws)
-    ws.sheet_properties.tabColor = TAB_COLOR["dashboard"] if "Dashboard" in spec["title"] else TAB_COLOR["report"]
-    DASHBOARD_END_ROW[spec["code"]] = row
+
+# ---------------------------------------------------------------- 04_Sales --
+ws = wb.create_sheet("04_Sales")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Sales", last_col=12)
+row = doc_block(
+    ws,
+    "Sales performance detail — orders, revenue, discounts, and returns by period, product, and channel.",
+    "FACT_OrderLines, FACT_Refunds, DIM_Date, DIM_Product, DIM_Collection.",
+    "Sales KPI row, Sales Trend chart (doubles as Sales by Date), Sales by Product / Sales by Collection breakdown tables (CUBE-function substitutes for a PivotTable — see dax/README.md), a link to the full Order List.",
+    "FACT_OrderLines links to DIM_Date/DIM_Product/DIM_Collection; FACT_Refunds links to FACT_OrderLines.",
+    "Live now: every card/table below reads dax/MEASURES.md's Gross Sales/Discounts/Returns/Net Sales measures (§0/§1) directly.",
+    last_col=12,
+)
+row, _ = add_cube_kpi_row(ws, row, [
+    ("Gross Sales", "Gross Sales"), ("Discounts", "Discounts"),
+    ("Returns", "Returns"), ("Net Sales", "Net Sales"),
+], col_start=2, card_width=2)
+row += 1
+
+ws.cell(row=row, column=2, value="SALES TREND / SALES BY DATE  (same Net Sales-by-month data — chart and table, not recomputed twice)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+trend_top = row
+_, trend_value_row, trend_first_col, trend_last_col = add_cube_trend_table(ws, trend_top, 2, "Net Sales", n_months=12, label="Net Sales — trailing 12 months")
+cats_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_top + 1, max_row=trend_top + 1)
+data_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_value_row, max_row=trend_value_row)
+add_native_line_chart(ws, f"B{trend_top + 4}", "Net Sales — Trailing 12 Months", cats_ref, data_ref, height_cm=7, width_cm=17)
+row = trend_top + 20
+
+ws.cell(row=row, column=2, value="SALES BY PRODUCT").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Sales by Product (Top 8 by Net Sales)", "DIM_Product", "Title", [("Net Sales", "Net Sales")], n=8)
+row += 1
+
+ws.cell(row=row, column=2, value="SALES BY COLLECTION").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Sales by Collection (Top 8 by Net Sales)", "DIM_Collection", "Title", [("Net Sales", "Net Sales")], n=8)
+row += 1
+
+ws.cell(row=row, column=2, value="ORDER LIST").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_gap_box(ws, row, 2, 10, 3, "Order List (Table)",
+    "No Order-level dimension exists in the Data Model — CUBE functions browse dimension members (Product/Collection/Customer/Location/Date), not individual fact rows, so a row-level order list can't be built this way without adding a new Data Model object, which is out of scope (architecture frozen). The full, live order list is RAW_Orders itself, already wired once Power Query is set up.")
+row = add_drill_link(ws, row, 2, "Order List", "RAW_Orders")
+row += 1
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.sheet_properties.tabColor = TAB_COLOR["report"]
+DASHBOARD_END_ROW["04_Sales"] = row
+
+# ------------------------------------------------------------- 05_Products --
+ws = wb.create_sheet("05_Products")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Products", last_col=12)
+row = doc_block(
+    ws,
+    "Product-level performance dashboard PLUS, as of Phase 3, the Product Cost Master — the workbook's historical/versioned SKU costing table.",
+    "DIM_Product, FACT_OrderLines (dashboard). RAW_Variants, RAW_Collections (Product Cost Master dropdowns).",
+    "Product KPI row, Top 10 Products chart, Product Margin breakdown table (CUBE-function substitute for a PivotTable). tbl_ProductCostMaster feeding DIM_ProductCostHistory.",
+    "DIM_Product links to FACT_OrderLines on ProductKey. tbl_ProductCostMaster[SKU] links to RAW_Variants[SKU]; COGS is matched via fn_GetEffectiveCost (SKU + order date against Effective From/To Date).",
+    "Live now: dashboard reads dax/MEASURES.md measures directly. Product Cost Master is manual entry — see PHASE3_DOCUMENTATION.md §1.",
+    last_col=12,
+)
+prod_kpi_top = row
+bestseller_formula = add_cube_rank1_name(ws, prod_kpi_top, 14, "DIM_Product", "Title", "Net Sales", ascending=False, label="BestSellerProduct")
+row, _, gaps05 = add_kpi_row_v2(ws, row, [
+    dict(label="Active SKUs", formula=None, reason="No DAX measure counts total/active SKUs — dax/MEASURES.md's Product Profitability section (§4) covers profit PER SKU via PivotTable row context, not a SKU-count aggregate. A DISTINCTCOUNT(DIM_Product[SKU]) measure doesn't exist in the library; adding one is out of this phase's reuse-only scope."),
+    dict(label="Best Seller", formula=bestseller_formula, numfmt="@"),
+    dict(label="Avg Margin %", formula=cube_measure("Gross Margin %"), numfmt="0.0%"),
+    dict(label="Slow Movers", formula=cube_measure("Slow Moving SKU Count"), numfmt="#,##0"),
+], col_start=2, card_width=2)
+row += 1
+
+ws.cell(row=row, column=2, value="TOP 10 PRODUCTS  (by Net Sales)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+top10_row = row
+top10_helper_col = 14
+top10_set_formula = f'=CUBESET("{CUBE_CONN}","{{[DIM_Product].[Title].Children}}","Top10Products","BDESC","[Measures].[Net Sales]")'
+top10_sc = ws.cell(row=top10_row, column=top10_helper_col, value=top10_set_formula)
+top10_sc.font = f(size=7, color=C["med_gray"])
+top10_set_ref = f"${get_column_letter(top10_helper_col)}${top10_row}"
+for i in range(10):
+    r = top10_row + 1 + i
+    ws.cell(row=r, column=2, value=f'=CUBERANKEDMEMBER("{CUBE_CONN}",{top10_set_ref},{i + 1})').font = f(size=9, color=style_calc_font())
+    vc = ws.cell(row=r, column=4, value=f'=CUBEVALUE("{CUBE_CONN}","[Measures].[Net Sales]",CUBERANKEDMEMBER("{CUBE_CONN}",{top10_set_ref},{i + 1}))')
+    vc.font = f(size=9, color=style_calc_font())
+    vc.number_format = "#,##0"
+top10_cats = Reference(ws, min_col=2, max_col=2, min_row=top10_row + 1, max_row=top10_row + 10)
+top10_data = Reference(ws, min_col=4, max_col=4, min_row=top10_row + 1, max_row=top10_row + 10)
+add_native_bar_chart(ws, f"F{top10_row}", "Top 10 Products — Net Sales", top10_cats, top10_data, height_cm=8, width_cm=15)
+row = top10_row + 12
+
+ws.cell(row=row, column=2, value="PRODUCT MARGIN").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Product Margin (Top 8 by Gross Profit)", "DIM_Product", "Title",
+    [("Net Sales", "Net Sales"), ("Gross Profit", "Gross Profit"), ("Gross Margin %", "Gross Margin %", "0.0%")],
+    n=8, order_measure="Gross Profit")
+row += 1
+
+ws.cell(row=row, column=2, value="VARIANT DETAIL").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_gap_box(ws, row, 2, 10, 3, "Variant Detail (PivotTable)",
+    "SKU/variant attributes (Price, Compare-at Price, current Unit Cost, Status) are row-level dimension data, not aggregate measures — CUBE functions can rank/aggregate a dimension's members by a measure (used above), but can't display raw per-row attribute columns the way a real PivotTable's row area can. Full variant detail is on DIM_Product / RAW_Variants directly.")
+row = add_drill_link(ws, row, 2, "Variant Detail", "DIM_Product")
+row += 1
+row = add_known_gaps_note(ws, row, 2, gaps05, last_col=12)
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.sheet_properties.tabColor = TAB_COLOR["report"]
+DASHBOARD_END_ROW["05_Products"] = row
+
+# ------------------------------------------------------------ 06_Customers --
+ws = wb.create_sheet("06_Customers")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Customers", last_col=12)
+row = doc_block(
+    ws,
+    "Customer analytics — lifetime value, repeat-purchase rate, and geography.",
+    "DIM_Customer, FACT_OrderLines.",
+    "Customer KPI row, Top Customers / Geography breakdown tables (CUBE-function substitutes for a PivotTable).",
+    "DIM_Customer links to FACT_OrderLines on CustomerKey.",
+    "Live now: reads dax/MEASURES.md's Customer Metrics measures (§5) directly.",
+    last_col=12,
+)
+row, _, gaps06 = add_kpi_row_v2(ws, row, [
+    dict(label="Total Customers", formula=None, reason="No DAX measure counts the full customer roster — dax/MEASURES.md defines [Customers Active (Current Period)] (period-filtered) and [New Customers] (first-order-in-period), but no all-time DISTINCTCOUNT(DIM_Customer[CustomerKey]) measure exists. Mapping this card to either existing measure would misrepresent what it actually counts, so it's left undocumented rather than mislabeled."),
+    dict(label="New Customers", formula=cube_measure("New Customers"), numfmt="#,##0"),
+    dict(label="Repeat Rate %", formula=cube_measure("Repeat Customer % Actual"), numfmt="0.0%"),
+    dict(label="Avg LTV", formula=cube_measure("Customer Lifetime Value (Historical)"), numfmt="#,##0"),
+], col_start=2, card_width=2)
+row += 1
+
+ws.cell(row=row, column=2, value="COHORT TREND / COHORT TABLE").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+COHORT_GAP_REASON = ("dax/MEASURES.md §5 documents Customer Cohorts as a PivotTable LAYOUT (DIM_Customer[CohortMonth] "
+    "on rows, DIM_Date[MonthName]/[Year] on columns), not a single measure — it is inherently a 2-dimensional "
+    "matrix. CUBE functions here rank a single dimension by a single measure (used everywhere else on this "
+    "sheet); reproducing a true cohort matrix would need nested CUBESET/CUBEVALUE expressions per cohort-month "
+    "x calendar-month intersection — the same class of advanced, execution-untestable MDX pattern already "
+    "flagged as a confidence risk in dax/README.md and the Phase 5/6 documentation. Not attempted rather than "
+    "shipped unverified.")
+row = add_gap_box(ws, row, 2, 10, 4, "Cohort Trend (Chart) / Cohort Table (PivotTable)", COHORT_GAP_REASON)
+row += 1
+
+ws.cell(row=row, column=2, value="TOP CUSTOMERS").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Top Customers (Top 8 by Net Sales)", "DIM_Customer", "Name",
+    [("Net Sales", "Net Sales"), ("CLV (Historical)", "Customer Lifetime Value (Historical)")], n=8)
+row += 1
+
+ws.cell(row=row, column=2, value="GEOGRAPHY").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Geography (Net Sales by Country)", "DIM_Customer", "Country", [("Net Sales", "Net Sales")], n=10)
+row += 1
+row = add_known_gaps_note(ws, row, 2, gaps06, last_col=12)
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.sheet_properties.tabColor = TAB_COLOR["report"]
+DASHBOARD_END_ROW["06_Customers"] = row
+
+# ------------------------------------------------------------- 07_Inventory --
+ws = wb.create_sheet("07_Inventory")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Inventory", last_col=12)
+row = doc_block(
+    ws,
+    "Stock levels, valuation, and turnover.",
+    "FACT_InventoryMovements, DIM_Product, DIM_Location.",
+    "Inventory KPI row, Stock Trend chart, Stock by Location / Low Stock / Inventory Valuation breakdown tables (CUBE-function substitutes for a PivotTable).",
+    "FACT_InventoryMovements links to DIM_Product and DIM_Location.",
+    "Live now: reads dax/MEASURES.md's Inventory Metrics measures (§6) directly.",
+    last_col=12,
+)
+row, _, gaps07 = add_kpi_row_v2(ws, row, [
+    dict(label="Inventory Value", formula=cube_measure("Inventory Value"), numfmt="#,##0"),
+    dict(label="Units on Hand", formula=None, reason="No DAX measure sums on-hand units across products — dax/MEASURES.md's Inventory Metrics (§6) are all VALUE-based ([Inventory Value], [Average Inventory Value]) or RATIO-based (Turnover, Days of Inventory, Stock Coverage), never a plain unit-count aggregate of FACT_InventoryMovements[ResultingOnHand]. Adding one would be a new measure outside this phase's reuse-only scope."),
+    dict(label="Inventory Turns", formula=cube_measure("Inventory Turnover"), numfmt="0.00"),
+    dict(label="Stockout Risk", formula=None, reason="No DAX measure or defined threshold exists for stockout risk — dax/MEASURES.md defines Slow Moving / Dead Stock SKU Count (low or zero sales while holding stock) but nothing for the opposite risk (high sales velocity vs. low remaining stock). Building one would require inventing a new business rule (a velocity-vs-stock threshold), which this phase's 'no new KPIs' scope rules out."),
+], col_start=2, card_width=2)
+row += 1
+
+ws.cell(row=row, column=2, value="STOCK TREND").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+ws.cell(row=row, column=2, value=(
+    "Uses [Average Inventory Value], not [Inventory Value]: dax/MEASURES.md §6 documents that [Inventory Value] "
+    "always returns the MOST RECENT snapshot regardless of any date filter — charting it by month would repeat "
+    "the same 'today' figure 12 times, not show a real trend. [Average Inventory Value] is the measure "
+    "specifically documented as date-filter-aware, so it's the one that actually plots a trend."
+)).font = f(size=8, italic=True, color=C["text_gray"])
+ws.row_dimensions[row].height = 24
+row += 1
+trend_top = row
+_, trend_value_row, trend_first_col, trend_last_col = add_cube_trend_table(ws, trend_top, 2, "Average Inventory Value", n_months=12, label="Average Inventory Value — trailing 12 months")
+cats_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_top + 1, max_row=trend_top + 1)
+data_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_value_row, max_row=trend_value_row)
+add_native_line_chart(ws, f"B{trend_top + 4}", "Average Inventory Value — Trailing 12 Months", cats_ref, data_ref, height_cm=7, width_cm=17)
+row = trend_top + 20
+
+ws.cell(row=row, column=2, value="STOCK BY LOCATION").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Stock by Location (Inventory Value)", "DIM_Location", "LocationName", [("Inventory Value", "Inventory Value")], n=10)
+row += 1
+
+ws.cell(row=row, column=2, value="LOW STOCK LIST").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+ws.cell(row=row, column=2, value="Ranked by Inventory Value, ascending — a unit-count 'low stock' measure doesn't exist (see Units on Hand, above); Inventory Value ascending is the closest existing-measure proxy for 'what's running low.'").font = f(size=8, italic=True, color=C["text_gray"])
+ws.row_dimensions[row].height = 24
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Low Stock List (Bottom 8 by Inventory Value)", "DIM_Product", "Title", [("Inventory Value", "Inventory Value")], n=8, ascending=True)
+row += 1
+
+ws.cell(row=row, column=2, value="INVENTORY VALUATION").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Inventory Valuation (Top 8 Products by Inventory Value)", "DIM_Product", "Title", [("Inventory Value", "Inventory Value")], n=8)
+row += 1
+row = add_known_gaps_note(ws, row, 2, gaps07, last_col=12)
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.sheet_properties.tabColor = TAB_COLOR["report"]
+DASHBOARD_END_ROW["07_Inventory"] = row
+
+# --------------------------------------------------------------- 08_Finance --
+ws = wb.create_sheet("08_Finance")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Finance", last_col=12)
+row = doc_block(
+    ws,
+    "Core management-basis financial statements — Profit & Loss and Cash Flow summary (not audited books).",
+    "FACT_OrderLines, FACT_ManualExpenses, FACT_Payments, Chart of Accounts mapping (15_Settings).",
+    "Finance KPI row, P&L Trend chart, P&L Statement and Cash Flow Statement (CUBE-function substitutes for a PivotTable, transcribing dax/MEASURES.md §1/§3's own documented measure maps into working formulas).",
+    "Combines Shopify-sourced facts with manually entered FACT_ManualExpenses, categorized via the Chart of Accounts mapping table.",
+    "Live now: every line reads an existing dax/MEASURES.md measure directly.",
+    last_col=12,
+)
+row, _ = add_cube_kpi_row(ws, row, [
+    ("Net Sales", "Net Sales"), ("Total Expenses", "Operating Expenses"),
+    ("Net Profit", "Net Profit"), ("Cash Balance", "Cash Position (Direct, Cumulative)"),
+], col_start=2, card_width=2)
+row += 1
+
+ws.cell(row=row, column=2, value="P&L TREND  (Net Sales / Operating Expenses / Net Profit)").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+pnl_month_row = row + 1
+PNL_SERIES = [("Net Sales", "Net Sales"), ("Operating Expenses", "Operating Expenses"), ("Net Profit", "Net Profit")]
+pnl_n_months = 12
+for i in range(pnl_n_months):
+    col = 3 + i
+    lc = ws.cell(row=pnl_month_row, column=col, value=f'=TEXT(EDATE(TODAY(),{-(pnl_n_months - 1 - i)}),"mmm-yy")')
+    lc.font = f(size=8, color=C["text_gray"])
+    lc.number_format = "@"
+for s_idx, (s_label, s_measure) in enumerate(PNL_SERIES):
+    vrow = pnl_month_row + 1 + s_idx
+    ws.cell(row=vrow, column=2, value=s_label).font = f(size=8, color=C["text_gray"])
+    for i in range(pnl_n_months):
+        col = 3 + i
+        vc = ws.cell(row=vrow, column=col, value=(
+            f'=CUBEVALUE("{CUBE_CONN}","[Measures].[{s_measure}]",'
+            f'"[DIM_Date].[Year].&["&YEAR(EDATE(TODAY(),{-(pnl_n_months - 1 - i)}))&"]",'
+            f'"[DIM_Date].[Month].&["&MONTH(EDATE(TODAY(),{-(pnl_n_months - 1 - i)}))&"]")'
+        ))
+        vc.font = f(size=8, color=C["calc_body"])
+        vc.number_format = "#,##0"
+pnl_cats_ref = Reference(ws, min_col=3, max_col=2 + pnl_n_months, min_row=pnl_month_row, max_row=pnl_month_row)
+pnl_data_ref = Reference(ws, min_col=3, max_col=2 + pnl_n_months, min_row=pnl_month_row + 1, max_row=pnl_month_row + len(PNL_SERIES))
+add_native_multiseries_line_chart(ws, f"B{pnl_month_row + len(PNL_SERIES) + 2}", "P&L Trend — Trailing 12 Months", pnl_cats_ref, pnl_data_ref, [s[0] for s in PNL_SERIES], height_cm=8, width_cm=17)
+row = pnl_month_row + len(PNL_SERIES) + 20
+
+ws.cell(row=row, column=2, value="P&L STATEMENT").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_statement_table(ws, row, 2, "P&L Statement (dax/MEASURES.md §1)", [
+    ("Gross Sales", "Gross Sales", "#,##0"),
+    ("Discounts", "Discounts", "#,##0"),
+    ("Returns", "Returns", "#,##0"),
+    ("Net Sales", "Net Sales", "#,##0"),
+    ("COGS", "COGS", "#,##0"),
+    ("Gross Profit", "Gross Profit", "#,##0"),
+    ("Gross Margin %", "Gross Margin %", "0.0%"),
+    ("Operating Expenses", "Operating Expenses", "#,##0"),
+    ("EBITDA", "EBITDA", "#,##0"),
+    ("Net Profit", "Net Profit", "#,##0"),
+])
+row += 1
+
+ws.cell(row=row, column=2, value="CASH FLOW STATEMENT").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_statement_table(ws, row, 2, "Cash Flow Statement (dax/MEASURES.md §3)", [
+    ("Cash Flow from Operating Activities", "Cash Flow from Operating Activities", "#,##0"),
+    ("Cash Flow from Investing Activities", "Cash Flow from Investing Activities", "#,##0"),
+    ("Cash Flow from Financing Activities", "Cash Flow from Financing Activities", "#,##0"),
+    ("Net Cash Flow", "Net Cash Flow", "#,##0"),
+    ("Cash Position (Direct, Cumulative)", "Cash Position (Direct, Cumulative)", "#,##0"),
+])
+row += 1
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.sheet_properties.tabColor = TAB_COLOR["report"]
+DASHBOARD_END_ROW["08_Finance"] = row
+
+# --------------------------------------------------------- 09_Profitability --
+ws = wb.create_sheet("09_Profitability")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Profitability", last_col=12)
+row = doc_block(
+    ws,
+    "Margin analysis — gross margin and profitability by product and collection.",
+    "FACT_OrderLines, DIM_Product, DIM_Collection.",
+    "Profitability KPI row, Margin Trend chart, Margin by Product / Margin by Collection breakdown tables (CUBE-function substitutes for a PivotTable).",
+    "FACT_OrderLines carries both revenue and COGS at line grain, enabling margin by any dimension.",
+    "Live now: reads dax/MEASURES.md's Gross Margin %/Gross Profit measures directly.",
+    last_col=12,
+)
+prof_kpi_top = row
+best_margin_formula = add_cube_rank1_name(ws, prof_kpi_top, 14, "DIM_Product", "ProductType", "Gross Margin %", ascending=False, label="BestMarginCategory")
+worst_margin_formula = add_cube_rank1_name(ws, prof_kpi_top + 1, 14, "DIM_Product", "ProductType", "Gross Margin %", ascending=True, label="WorstMarginCategory")
+row, _, gaps09 = add_kpi_row_v2(ws, row, [
+    dict(label="Gross Margin %", formula=cube_measure("Gross Margin %"), numfmt="0.0%"),
+    dict(label="Contribution Margin %", formula=None, reason="dax/MEASURES.md doesn't define a Contribution Margin % measure — [Gross Margin %] (Net Sales less COGS) is a different, already-defined concept from Contribution Margin (Net Sales less variable costs only, excluding fixed costs), and Operating Expenses aren't split into fixed/variable in this model. Mapping this card to Gross Margin % would mislabel an existing measure as something it isn't, so it's left undocumented instead."),
+    dict(label="Best Margin Category", formula=best_margin_formula, numfmt="@"),
+    dict(label="Worst Margin Category", formula=worst_margin_formula, numfmt="@"),
+], col_start=2, card_width=2)
+row += 1
+ws.cell(row=row, column=2, value="\"Category\" = Shopify's ProductType field (DIM_Product[ProductType]) — the workbook has no separate Category dimension. Same ranking caveat as BI_Insights' Best/Weakest Seller: a low-volume ProductType can rank first/last on a thin sample.").font = f(size=8, italic=True, color=C["text_gray"])
+ws.row_dimensions[row].height = 24
+row += 1
+
+ws.cell(row=row, column=2, value="MARGIN TREND").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+trend_top = row
+_, trend_value_row, trend_first_col, trend_last_col = add_cube_trend_table(ws, trend_top, 2, "Gross Margin %", n_months=12, label="Gross Margin % — trailing 12 months")
+for c in range(trend_first_col, trend_last_col + 1):
+    ws.cell(row=trend_value_row, column=c).number_format = "0.0%"
+cats_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_top + 1, max_row=trend_top + 1)
+data_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_value_row, max_row=trend_value_row)
+add_native_line_chart(ws, f"B{trend_top + 4}", "Gross Margin % — Trailing 12 Months", cats_ref, data_ref, height_cm=7, width_cm=17)
+row = trend_top + 20
+
+ws.cell(row=row, column=2, value="MARGIN BY PRODUCT").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Margin by Product (Top 8 by Gross Profit)", "DIM_Product", "Title",
+    [("Gross Profit", "Gross Profit"), ("Gross Margin %", "Gross Margin %", "0.0%")], n=8, order_measure="Gross Profit")
+row += 1
+
+ws.cell(row=row, column=2, value="MARGIN BY COLLECTION").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+row = add_cube_breakdown_table(ws, row, 2, "Margin by Collection (Top 8 by Gross Profit)", "DIM_Collection", "Title",
+    [("Gross Profit", "Gross Profit"), ("Gross Margin %", "Gross Margin %", "0.0%")], n=8, order_measure="Gross Profit")
+row += 1
+row = add_known_gaps_note(ws, row, 2, gaps09, last_col=12)
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.sheet_properties.tabColor = TAB_COLOR["report"]
+DASHBOARD_END_ROW["09_Profitability"] = row
+
+# -------------------------------------------------------------- 13_Marketing --
+ws = wb.create_sheet("13_Marketing")
+ws.sheet_view.showGridLines = False
+set_col_widths(ws, [3] + [13] * 11)
+title_bar(ws, "Marketing", last_col=12)
+row = doc_block(
+    ws,
+    "Campaign and discount-code performance tracking; future home for ad-spend ROAS once integrated.",
+    "DIM_Collection, FACT_OrderLines (discount amounts). Future: FACT_MarketingSpend.",
+    "Marketing KPI row, Discount Trend chart. Campaign Performance / Discount Code Usage remain undocumented gaps (no Campaign dimension in the Data Model).",
+    "FACT_OrderLines[DiscountAmount] rolls up via the existing [Discounts] measure.",
+    "Live now: Total Discount Given / Discount Trend read dax/MEASURES.md's [Discounts] directly. Meta/TikTok Ads API — future integration, still not connected (Marketing-Ready Layer, Phase 5).",
+    last_col=12,
+)
+row, _, gaps13 = add_kpi_row_v2(ws, row, [
+    dict(label="Total Discount Given", formula=cube_measure("Discounts"), numfmt="#,##0"),
+    dict(label="Active Campaigns", formula=None, reason="No Campaign dimension exists in the Data Model — the Marketing-Ready Layer (RAW_MetaAds/RAW_GoogleAds/etc., FACT_MarketingSpend) is reserved but deliberately not connected (no API wired, per Phase 5's explicit scope), so there's no campaign data to count."),
+    dict(label="Discount Rate %", formula=None, reason="No DAX measure defines a discount-rate ratio — [Discounts] and [Gross Sales] both exist individually, but DIVIDE([Discounts],[Gross Sales]) as a named, reusable measure isn't in dax/MEASURES.md or its addenda. Adding one would be a new measure outside this phase's reuse-only scope, even though both inputs it would combine already exist."),
+    dict(label="ROAS (future)", formula=None, reason="Documented as a future metric since this card's own label was written (Phase 1) — ROAS needs ad spend data from the unconnected Marketing-Ready Layer, same root cause as Active Campaigns above. dax/PHASE5_MEASURES_ADDENDUM.md's KPI Targets section states this explicitly: the target is ready and editable, there's no Actual to compare it against yet."),
+], col_start=2, card_width=2)
+row += 1
+
+ws.cell(row=row, column=2, value="DISCOUNT TREND").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+trend_top = row
+_, trend_value_row, trend_first_col, trend_last_col = add_cube_trend_table(ws, trend_top, 2, "Discounts", n_months=12, label="Discounts — trailing 12 months")
+cats_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_top + 1, max_row=trend_top + 1)
+data_ref = Reference(ws, min_col=trend_first_col, max_col=trend_last_col, min_row=trend_value_row, max_row=trend_value_row)
+add_native_line_chart(ws, f"B{trend_top + 4}", "Discounts — Trailing 12 Months", cats_ref, data_ref, height_cm=7, width_cm=17)
+row = trend_top + 20
+
+ws.cell(row=row, column=2, value="CAMPAIGN PERFORMANCE / DISCOUNT CODE USAGE").font = f(size=10, bold=True, color=C["text_gray"])
+row += 1
+MARKETING_GAP_REASON = ("No Campaign dimension exists (Active Campaigns' reason above applies identically). "
+    "Discount Code Usage specifically: RAW_Discounts (Power Query staging) holds discount-code data, but it was "
+    "never built into the star schema in Phase 4 — no DIM_/FACT_ table, no Data Model relationship, no DAX "
+    "measure reads it. It's real, wired data (once Power Query is set up) but not reachable from the Data Model "
+    "this sheet's other cards depend on.")
+row = add_gap_box(ws, row, 2, 10, 4, "Campaign Performance (PivotTable) / Discount Code Usage (PivotTable)", MARKETING_GAP_REASON)
+row = add_drill_link(ws, row, 2, "Discount Code Data", "RAW_Discounts")
+row += 1
+row = add_known_gaps_note(ws, row, 2, gaps13, last_col=12)
+
+freeze_below_header(ws)
+protect_ws(ws)
+ws.sheet_properties.tabColor = TAB_COLOR["report"]
+DASHBOARD_END_ROW["13_Marketing"] = row
 
 
 # ============================================================================
@@ -1068,8 +1591,14 @@ row = doc_block(
     "This IS the source — no external system. Document Management: Invoice Number/File Name/File Path/Cloud Link are references only — see passress-mis/PHASE3_DOCUMENTATION.md; a future phase may connect Cloud Link directly to OneDrive/SharePoint.",
     last_col=18,
 )
-row, _ = add_kpi_row(ws, row, ["Expenses MTD", "Expenses YTD", "Largest Category", "Budget Variance"], col_start=2, card_width=2)
+row, _, gaps_exp = add_kpi_row_v2(ws, row, [
+    dict(label="Expenses MTD", formula=None, reason="dax/MEASURES.md's time-intelligence pattern (§8: MTD/QTD/YTD/Previous Period/SPLY/Rolling) was only instantiated for Net Sales, Gross Profit, Net Profit, and Order Count — an 'Operating Expenses MTD' measure was never written out, though the pattern to add one is documented. Adding it is a new measure, outside this phase's reuse-only scope."),
+    dict(label="Expenses YTD", formula=None, reason="Same root cause as Expenses MTD above — no YTD variant of [Operating Expenses] exists in dax/MEASURES.md or its addenda."),
+    dict(label="Largest Category", formula=None, reason="Expense Category is a plain text column on FACT_ManualExpenses, not a Data Model dimension (DIM_Product/DIM_Collection/DIM_Customer/DIM_Location are — Expense Category isn't among them, per dax/README.md's relationship list) — CUBESET/CUBERANKEDMEMBER, the mechanism used everywhere else on this sheet, can only rank members of an actual dimension hierarchy."),
+    dict(label="Budget Variance", formula=cube_measure("Expense Actual vs Budget"), numfmt="#,##0"),
+], col_start=2, card_width=2)
 row += 1
+row = add_known_gaps_note(ws, row, 2, gaps_exp, last_col=18)
 ws.cell(row=row, column=2, value="MANUAL EXPENSE ENTRY  (green cells = type here — Expense ID and Possible Duplicate are automatic)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
 expenses_header_row = row
@@ -1125,8 +1654,14 @@ row = doc_block(
     "This IS the source — no external system. Manual entry only.",
     last_col=9,
 )
-row, _ = add_kpi_row(ws, row, ["Capital Invested", "Owner Withdrawals", "Net Owner Equity", "YTD Movement"], col_start=2, card_width=2)
+row, _, gaps_cap = add_kpi_row_v2(ws, row, [
+    dict(label="Capital Invested", formula=cube_measure("Capital Invested (Cumulative)"), numfmt="#,##0"),
+    dict(label="Owner Withdrawals", formula=cube_measure("Capital Withdrawals (Period)"), numfmt="#,##0"),
+    dict(label="Net Owner Equity", formula=cube_measure("Equity"), numfmt="#,##0"),
+    dict(label="YTD Movement", formula=None, reason="dax/MEASURES.md defines [Net Capital (Period)] and [Capital Invested (Cumulative)] (all-time, since inception) but no YTD-specific variant — the §8 time-intelligence pattern (TOTALYTD, etc.) was only instantiated for Net Sales/Gross Profit/Net Profit/Order Count, not Net Capital. Adding a 'Net Capital YTD' measure is outside this phase's reuse-only scope."),
+], col_start=2, card_width=2)
 row += 1
+row = add_known_gaps_note(ws, row, 2, gaps_cap, last_col=9)
 ws.cell(row=row, column=2, value="CAPITAL TRANSACTIONS  (green cells = type here — Capital ID and Possible Duplicate are automatic)").font = f(size=10, bold=True, color=C["text_gray"])
 row += 1
 capital_header_row = row
@@ -1428,6 +1963,8 @@ VERSION_LOG_ROWS = [
      "RPT_ExecutiveBrief (new hidden sheet, linked from 01_Home): one-page A4-printable daily brief — today's Revenue/Orders/Gross Profit/Margin, Cash Position, Inventory Value, Revenue vs Yesterday, Top 5 Products/Collections, Critical Alerts, Business Health Score, Executive Commentary — also serves as the Automated Daily Report (print-ready from the start, no separate duplicate sheet). BI_HealthScore: the master 0-100 Business Health Score, 10 weighted components (weights editable on 15_Settings' new tbl_HealthScoreWeights), Red/Amber/Green status. 14_Data_Quality expanded with 11 checks (Missing SKU/Cost/Supplier, Duplicate Orders/Expenses, Products without Collection/Images, Negative Inventory, Missing Customer/Payment, Refresh Failures — Products without Images marked N/A, honestly, since RAW_Products.pq was never extended to fetch image data and Phase 6 must not modify Phase 2), an Overall Data Quality % (named range, reused by the Health Score), and a Historical Refresh Trend chart. RPT_Workflow (new hidden sheet): Purchase Orders/Open Orders/Pending Receipts/Inventory to Receive/Supplier Status/Capital Remaining/Outstanding Expenses/Monthly Purchasing — reuses existing measures under workflow-specific labels rather than inventing new ones. DIM_Date.pq extended (additively — every existing column unchanged) with IsWorkingDay/IsHoliday/HolidayName, reading a new empty-by-default Holidays table (15_Settings) — MTD/QTD/YTD/Rolling 12/Previous Year/SPLY needed no new columns, already fully covered by Phase 4's time intelligence. Drill-through hyperlinks added from Partner/CEO Dashboard KPI sections to their detail sheets (04_Sales/06_Customers/07_Inventory/09_Profitability/10_Expenses) — link-based navigation, not true OLAP drill-through, which needs real PivotTables (Phase 7+). PRODUCTION READINESS REVIEW found and fixed 5 real bugs: SKUList/CollectionTitleList named ranges and 3 Phase 5 Alert formulas referenced Phase 1's placeholder table names (tbl_RAW_Variants, tbl_LOG_RefreshHistory, tbl_LOG_DataQuality) instead of the permanent post-Power-Query-wiring names (RAW_Variants, LOG_RefreshHistory, LOG_DataQuality) — every DAX measure already used the correct convention; only these 5 worksheet-formula references were wrong, now fixed. Full findings in /passress-mis/PHASE6_PRODUCTION_READINESS_REVIEW.md; what's new in /passress-mis/PHASE6_DOCUMENTATION.md."],
     ["7.0", "2026-07-26", "Phase 7 — Production Readiness Certification",
      "Full line-by-line review of build_workbook.py, every Power Query shared function, a representative cross-section of staging/star-schema queries, and the complete DAX measure library, against explicit correctness/performance/security criteria. Found and fixed 5 real defects: BI_Alerts ALT-10's stray placeholder-token formula (simplified, no functional change but removed a maintenance trap); 14_Data_Quality's Historical Refresh Trend chart was off-by-one, silently dropping the first logged refresh; BI_Insights' INS-06/INS-07 (Best/Weakest seller) called CUBERANKEDMEMBER against an unordered, unranked MDX set, so both insights always showed the identical arbitrary product instead of true sales-ranked results — fixed with proper CUBESET-backed ranking (BDESC/BASC by Net Sales), the same pattern used everywhere else in the workbook; 01_Home's and 14_Data_Quality's Last Refresh/Data Quality/Rows Loaded/Errors Found KPI cards were left as static Phase 1 placeholders despite their own doc_block promising live LOG_ data — wired to existing LOG_RefreshHistory/LOG_DataQuality/OverallDataQualityPct sources, no new measures. Also corrected the now-inaccurate 'Placeholder, built in Phase 4' label on 04_Sales/06_Customers/07_Inventory/09_Profitability/13_Marketing/05_Products/08_Finance's still-unbuilt generic dashboard chart/PivotTable placeholders — deliberately left unbuilt (never commissioned by any phase's brief, and wiring their KPI cards would require inventing new DAX measures outside this phase's 'no new features' scope) but the stale phase-attribution text was actively misleading and is now accurate. Four new documentation deliverables: DEPLOYMENT_GUIDE.md, OPERATIONS_MANUAL.md, TECHNICAL_DOCUMENTATION.md, and PHASE7_FINAL_ARCHITECTURE_REVIEW.md (technical debt, performance/security review, SQL Server + Power BI migration path). No architecture changes, no new dashboards or modules — additive fixes and documentation only, per this phase's explicit scope."],
+    ["8.0", "2026-07-26", "Phase 8 — Placeholder Completion (Reuse-Only)",
+     "Completed every remaining placeholder KPI card, chart, and 'PivotTable' substitute that could be built from the existing Power Query layer, Data Model, and DAX measure library — architecture frozen, no new measures, no new KPIs, no new dashboards, per this phase's explicit scope. 04_Sales/05_Products/06_Customers/07_Inventory/08_Finance/09_Profitability/13_Marketing rebuilt: 20 of 28 KPI cards wired to existing measures, 6 new native charts (Sales/Stock/Margin/Discount trends, a 3-series P&L Trend, a Top-10-Products bar chart), 12 CUBE-function breakdown tables standing in for a PivotTable (Sales/Margin by Product/Collection, Stock by Location, Top Customers, Geography, etc. — a new add_cube_breakdown_table helper generalizing Phase 5's add_cube_top_n to multiple measure columns, same underlying mechanism), P&L Statement and Cash Flow Statement built directly from dax/MEASURES.md §1/§3's own documented measure maps. 10_Expenses/11_Capital/12_Suppliers' own unwired KPI cards (missed by Phase 7's sweep, caught in this phase's fuller scan) also completed — 6 of 12 wired, 3 of them reusing RPT_Workflow's own existing formulas verbatim. Order List and Variant Detail (row-level detail no CUBE function can produce) linked directly to RAW_Orders/DIM_Product instead of left blank. Every remaining gap (13 KPI cards, 4 chart/pivot items) is left as a visible, specific 'Not implementable: <reason>' note in the workbook itself, not just in documentation — no existing measure covers the concept, no Data Model dimension exists for the breakdown, the data is row-level and can't be produced by a CUBE function, or (Customer Cohorts alone) the underlying data exists but a true 2D matrix needs an execution-untestable nested-MDX pattern. Full inventory in /passress-mis/PHASE8_DOCUMENTATION.md. Second full scan after all fixes: 0 static placeholder cells, 0 generic placeholder boxes remaining, all structural validation clean."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
@@ -1580,8 +2117,21 @@ row = doc_block(
     "This IS the source today. Candidate for supplier-portal or accounting-system integration later (see Future Integrations in the Phase 0 architecture).",
     last_col=10,
 )
-row, _ = add_kpi_row(ws, row, ["Active Suppliers", "Open POs", "Purchases YTD", "Outstanding Receipts"], col_start=2, card_width=2)
+row, _, gaps_sup = add_kpi_row_v2(ws, row, [
+    # Active Suppliers / Outstanding Receipts reuse the EXACT same formulas
+    # RPT_Workflow already writes against these same tables (Phase 6) — not
+    # recomputed differently here, just the same plain worksheet formula
+    # shown on a second sheet. Open POs reuses the same "not Closed, not
+    # Cancelled" filter dax/MEASURES.md's [Accounts Payable (Proxy)] already
+    # defines for "committed, unsettled" POs, applied as a worksheet
+    # COUNTIFS against the same tbl_POHeader table sitting right below.
+    dict(label="Active Suppliers", formula='=COUNTIFS(tbl_SupplierMaster[Status],"Active")', numfmt="#,##0"),
+    dict(label="Open POs", formula='=COUNTIFS(tbl_POHeader[Status],"<>Closed",tbl_POHeader[Status],"<>Cancelled")', numfmt="#,##0"),
+    dict(label="Purchases YTD", formula=None, reason="dax/MEASURES.md defines [Cash Paid for Purchases] (period-aggregate, driven by whatever filter context a report provides) but no YTD-specific variant — the §8 time-intelligence pattern was only instantiated for Net Sales/Gross Profit/Net Profit/Order Count. A worksheet SUMIFS reimplementing a Jan-1-to-today window against tbl_GoodsReceipt directly would be new logic, not a reuse of an existing formula or measure, so it wasn't added."),
+    dict(label="Outstanding Receipts", formula='=SUM(tbl_GoodsReceipt[Remaining Quantity])', numfmt="#,##0"),
+], col_start=2, card_width=2)
 row += 1
+row = add_known_gaps_note(ws, row, 2, gaps_sup, last_col=10)
 
 # --- Supplier Master --------------------------------------------------------
 ws.cell(row=row, column=2, value="SUPPLIER MASTER  (green cells = type here — Supplier ID is automatic)").font = f(size=10, bold=True, color=C["text_gray"])
