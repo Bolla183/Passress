@@ -140,3 +140,46 @@ the same on paper but aren't**:
 
 Every defined name in this workbook has now been re-audited against this
 distinction (§3's table); none remain in the second category.
+
+---
+
+## 7. Addendum (9.1) — a second, independent finding: chart category type mismatch
+
+After the §3 fix, a repair prompt was still reported on a fresh Desktop
+Excel open. LibreOffice was tried as an independent second validator to
+cross-check the file outside this environment's own tooling, but it turned
+out unusable here (it fails to load even a trivial one-cell test workbook
+in this sandbox — an environment limitation, not a signal about this file).
+Investigating further by hand instead, directly inspecting the generated
+chart XML surfaced a second, genuinely separate issue.
+
+**Finding:** every chart in the workbook (all 9) has a text-valued category
+axis — month labels from a `TEXT()` formula (`"Jan-26"`, etc.) or
+product/customer names from `CUBERANKEDMEMBER`. openpyxl's `Chart.
+set_categories()` method unconditionally writes `<c:numRef>` (a *numeric*
+reference) for the category axis regardless of what the referenced cells
+actually contain — confirmed by reading openpyxl's own source
+(`ChartBase.set_categories`, hardcodes `NumRef`). A numeric reference
+wrapping text content is a mismatch against what the category actually is,
+present in every chart since the pattern was first used in Phase 5 — not
+something introduced by Phase 8's new charts specifically, just newly
+visible because Phase 8 added enough new charts (and this was the first
+time the file was tested against a repair-capable Desktop Excel at all).
+
+**Fix:** a new `set_text_categories()` helper builds the category axis
+data source explicitly with `AxDataSource(strRef=StrRef(f=cats_ref))`
+instead of calling openpyxl's `set_categories()` — every chart-building
+function (`add_native_line_chart`, `add_native_multiseries_line_chart`,
+`add_native_bar_chart`) now uses it. Verified in the regenerated file: all
+9 `chart*.xml` parts now show `<c:cat><c:strRef>...` instead of
+`<c:cat><c:numRef>...`.
+
+**Honest caveat:** unlike §3's named-range finding (confirmed via an exact
+repair-log screenshot naming the affected sheets), this fix is not yet
+confirmed as *the* cause of the second repair report — the follow-up
+screenshot showed only the initial Yes/No prompt, not the detailed
+"Removed Records" log. It's a real, independent, spec-level defect worth
+fixing regardless of whether it's the full explanation, but if a repair
+prompt still appears after this fix, the next diagnostic step is getting
+that detailed log (click Yes, screenshot the resulting list) rather than
+further speculation.

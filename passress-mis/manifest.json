@@ -324,92 +324,92 @@
     {
       "table": "tbl_VersionLog",
       "sheet": "15_Settings",
-      "ref": "B36:E46"
+      "ref": "B36:E47"
     },
     {
       "table": "tbl_LookupExpenseCategory",
       "sheet": "15_Settings",
-      "ref": "B50:B60"
+      "ref": "B51:B61"
     },
     {
       "table": "tbl_LookupExpenseSubcategory",
       "sheet": "15_Settings",
-      "ref": "B62:B74"
+      "ref": "B63:B75"
     },
     {
       "table": "tbl_LookupCostCenter",
       "sheet": "15_Settings",
-      "ref": "B76:B81"
+      "ref": "B77:B82"
     },
     {
       "table": "tbl_LookupPaymentMethod",
       "sheet": "15_Settings",
-      "ref": "B83:B89"
+      "ref": "B84:B90"
     },
     {
       "table": "tbl_LookupCurrency",
       "sheet": "15_Settings",
-      "ref": "B91:B95"
+      "ref": "B92:B96"
     },
     {
       "table": "tbl_LookupSupplierType",
       "sheet": "15_Settings",
-      "ref": "B97:B105"
+      "ref": "B98:B106"
     },
     {
       "table": "tbl_LookupSupplierStatus",
       "sheet": "15_Settings",
-      "ref": "B107:B110"
+      "ref": "B108:B111"
     },
     {
       "table": "tbl_LookupCapitalTransactionType",
       "sheet": "15_Settings",
-      "ref": "B112:B114"
+      "ref": "B113:B115"
     },
     {
       "table": "tbl_LookupPOStatus",
       "sheet": "15_Settings",
-      "ref": "B116:B123"
+      "ref": "B117:B124"
     },
     {
       "table": "tbl_LookupWarehouse",
       "sheet": "15_Settings",
-      "ref": "B125:B128"
+      "ref": "B126:B129"
     },
     {
       "table": "tbl_LookupOwner",
       "sheet": "15_Settings",
-      "ref": "B130:B131"
+      "ref": "B131:B132"
     },
     {
       "table": "tbl_LookupBudgetPeriod",
       "sheet": "15_Settings",
-      "ref": "B133:B135"
+      "ref": "B134:B136"
     },
     {
       "table": "tbl_LookupBudgetCategory",
       "sheet": "15_Settings",
-      "ref": "B137:B142"
+      "ref": "B138:B143"
     },
     {
       "table": "tbl_LookupAlertSeverity",
       "sheet": "15_Settings",
-      "ref": "B144:B147"
+      "ref": "B145:B148"
     },
     {
       "table": "tbl_KPITargets",
       "sheet": "15_Settings",
-      "ref": "B151:F161"
+      "ref": "B152:F162"
     },
     {
       "table": "tbl_HealthScoreWeights",
       "sheet": "15_Settings",
-      "ref": "B165:C175"
+      "ref": "B166:C176"
     },
     {
       "table": "tbl_Holidays",
       "sheet": "15_Settings",
-      "ref": "B179:C180"
+      "ref": "B180:C181"
     },
     {
       "table": "tbl_RAW_Orders",

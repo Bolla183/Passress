@@ -21,6 +21,7 @@ from openpyxl.worksheet.dimensions import RowDimension
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.comments import Comment
 from openpyxl.chart import LineChart, BarChart, Reference
+from openpyxl.chart.data_source import AxDataSource, StrRef
 from openpyxl.formatting.rule import FormulaRule
 
 FONT_NAME = "Segoe UI"
@@ -441,6 +442,20 @@ def set_print_friendly(ws, last_col=12, last_row=90):
     ws.page_margins.top = ws.page_margins.bottom = 0.4
 
 
+def set_text_categories(chart, cats_ref):
+    """openpyxl's built-in Chart.set_categories() always emits <c:numRef>
+    (a NUMERIC reference), even when the referenced cells hold text — every
+    category axis in this workbook is text (month labels from a TEXT()
+    formula, or product/customer names from CUBERANKEDMEMBER), never a
+    number. A numRef wrapping non-numeric content is a real, spec-level
+    mismatch (OOXML expects <c:strRef> for string-valued categories) found
+    while investigating a persistent Excel repair-on-open report — applied
+    to every chart in the workbook, not just the ones on the flagged
+    sheets, since the same openpyxl default produced it everywhere."""
+    for s in chart.series:
+        s.cat = AxDataSource(strRef=StrRef(f=cats_ref))
+
+
 def add_native_line_chart(ws, anchor_cell, title, cats_ref, data_ref, height_cm=6, width_cm=16):
     chart = LineChart()
     chart.title = title
@@ -449,7 +464,7 @@ def add_native_line_chart(ws, anchor_cell, title, cats_ref, data_ref, height_cm=
     chart.height = height_cm
     chart.width = width_cm
     chart.add_data(data_ref, titles_from_data=False)
-    chart.set_categories(cats_ref)
+    set_text_categories(chart, cats_ref)
     if chart.series:
         chart.series[0].graphicalProperties.line.solidFill = C["black"]
         chart.series[0].graphicalProperties.line.width = 20000
@@ -471,7 +486,7 @@ def add_native_multiseries_line_chart(ws, anchor_cell, title, cats_ref, data_ref
     chart.height = height_cm
     chart.width = width_cm
     chart.add_data(data_ref, titles_from_data=False, from_rows=True)
-    chart.set_categories(cats_ref)
+    set_text_categories(chart, cats_ref)
     line_colors = [C["black"], C["shopify_body"], C["input_body"]]
     for i, s in enumerate(chart.series):
         s.graphicalProperties.line.solidFill = line_colors[i % len(line_colors)]
@@ -499,7 +514,7 @@ def add_native_bar_chart(ws, anchor_cell, title, cats_ref, data_ref, height_cm=7
     chart.height = height_cm
     chart.width = width_cm
     chart.add_data(data_ref, titles_from_data=False)
-    chart.set_categories(cats_ref)
+    set_text_categories(chart, cats_ref)
     if chart.series:
         chart.series[0].graphicalProperties.solidFill = C["dark_gray"]
     chart.legend = None
@@ -1981,6 +1996,8 @@ VERSION_LOG_ROWS = [
      "Completed every remaining placeholder KPI card, chart, and 'PivotTable' substitute that could be built from the existing Power Query layer, Data Model, and DAX measure library — architecture frozen, no new measures, no new KPIs, no new dashboards, per this phase's explicit scope. 04_Sales/05_Products/06_Customers/07_Inventory/08_Finance/09_Profitability/13_Marketing rebuilt: 20 of 28 KPI cards wired to existing measures, 6 new native charts (Sales/Stock/Margin/Discount trends, a 3-series P&L Trend, a Top-10-Products bar chart), 12 CUBE-function breakdown tables standing in for a PivotTable (Sales/Margin by Product/Collection, Stock by Location, Top Customers, Geography, etc. — a new add_cube_breakdown_table helper generalizing Phase 5's add_cube_top_n to multiple measure columns, same underlying mechanism), P&L Statement and Cash Flow Statement built directly from dax/MEASURES.md §1/§3's own documented measure maps. 10_Expenses/11_Capital/12_Suppliers' own unwired KPI cards (missed by Phase 7's sweep, caught in this phase's fuller scan) also completed — 6 of 12 wired, 3 of them reusing RPT_Workflow's own existing formulas verbatim. Order List and Variant Detail (row-level detail no CUBE function can produce) linked directly to RAW_Orders/DIM_Product instead of left blank. Every remaining gap (13 KPI cards, 4 chart/pivot items) is left as a visible, specific 'Not implementable: <reason>' note in the workbook itself, not just in documentation — no existing measure covers the concept, no Data Model dimension exists for the breakdown, the data is row-level and can't be produced by a CUBE function, or (Customer Cohorts alone) the underlying data exists but a true 2D matrix needs an execution-untestable nested-MDX pattern. Full inventory in /passress-mis/PHASE8_DOCUMENTATION.md. Second full scan after all fixes: 0 static placeholder cells, 0 generic placeholder boxes remaining, all structural validation clean."],
     ["9.0", "2026-07-26", "Phase 9 — File-Corruption Hotfix (Real-World Test Finding)",
      "Triggered by the first real Windows Excel open of this workbook, which required a repair just to load ('Removed Records: Named range from workbook.xml' + 'Formula from sheet5/10/12.xml' — confirmed via workbook.xml.rels to be 05_Products/10_Expenses/12_Suppliers, the three sheets sourcing SKU/Collection dropdowns from SKUList/CollectionTitleList). Root cause: those two named ranges (and several worksheet formulas in BI_Alerts, 14_Data_Quality, RPT_Workflow, 01_Home added in Phases 6-8) pointed at the POST-WIRING table name (RAW_Variants, LOG_DataQuality, etc.) rather than the always-present tbl_-prefixed placeholder — a Phase 6 design choice that assumed an unresolved reference would simply show a formula error until Power Query is wired. A real Excel open proved otherwise: a workbook-scoped defined name referencing a table that doesn't exist ANYWHERE in the file is structurally invalid at load time, not just unresolved at calculation time, so Excel strips the name and every Data Validation dropdown depending on it, forcing a file repair. Reverted every affected named range and worksheet formula back to the tbl_-prefixed placeholder name (DAX measures untouched — they read the Data Model, not Excel Table objects, so were never affected). A second, related finding from the same stricter validation: 14_Data_Quality's Missing Supplier check referenced DIM_Product directly, and DIM_/FACT_ tables go through the identical placeholder-until-wired lifecycle as RAW_/LOG_ (dax/README.md Step 1) — fixed to tbl_DIM_Product. Added a permanent build-time check verifying every defined name and every Table[Column] formula reference resolves to a table that actually exists in the generated file — 0 issues found after the fix (previously no such check existed; bracket-balance/XML-well-formedness checks don't catch a semantically invalid table reference). New required manual step added to DEPLOYMENT_GUIDE.md §5.4: rename SKUList/CollectionTitleList via Name Manager to drop the tbl_ prefix once RAW_Variants/RAW_Collections are actually wired — documented as a one-time, unmissable step rather than left to be silently forgotten. Full findings in /passress-mis/PHASE9_DOCUMENTATION.md; PHASE6_PRODUCTION_READINESS_REVIEW.md's original (superseded) fix table annotated, not rewritten."],
+    ["9.1", "2026-07-26", "Phase 9 Addendum — Chart Category Type Fix",
+     "A repair prompt was still reported after 9.0's fix, on a fresh Desktop Excel open. Investigated by reading the generated chart XML directly (LibreOffice was tried as an independent second validator but is unusable in this build environment — fails to load even a trivial one-cell test workbook, an environment limitation unrelated to this file). Finding: all 9 charts have text-valued category axes (month labels from a TEXT() formula, or product/customer names from CUBERANKEDMEMBER) but openpyxl's Chart.set_categories() unconditionally writes a numeric reference (<c:numRef>) regardless of the referenced cells' actual content — confirmed by reading openpyxl's own source. Present since the charting pattern was first used in Phase 5, not something Phase 8 introduced; only became visible once the file was actually tested against a repair-capable Desktop Excel. Fixed with a new set_text_categories() helper that builds each chart's category axis explicitly as a string reference (AxDataSource(strRef=StrRef(...))) instead — applied in all three chart-building functions. Verified in the regenerated file: every chart*.xml part now uses <c:strRef> for its category axis. Documented honestly as NOT yet confirmed to be the full explanation for the second repair report (no detailed repair log was available for this occurrence, unlike 9.0's) — a real, independent, spec-level defect fixed on its own merits; the next diagnostic step if a repair prompt still appears is the detailed 'Removed Records' log, not further speculation. Full addendum in /passress-mis/PHASE9_DOCUMENTATION.md §7."],
 ]
 tbl_version_log_top_row = row
 row = add_table(
