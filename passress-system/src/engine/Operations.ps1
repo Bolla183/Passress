@@ -92,8 +92,8 @@ function Invoke-PassressOperationsStage {
         [Parameter(Mandatory)][hashtable]$Inputs,     # HEIRARCHY, COST_MASTER, OPENING_INVENTORY, PRODUCTION, SUPPLIERS, PURCHASES, RETURNS, RETURN_INSPECTIONS, INVENTORY_ADJUSTMENTS
         $PreviousCostState, [Parameter(Mandatory)]$Config, [Parameter(Mandatory)][string]$RunId
     )
-    $Upstream = ConvertTo-PassressRowSet $Upstream @('SALES_FACT', 'REVENUE_EVENTS', 'RAW_CUSTOMERS', 'RAW_VARIANTS', 'REFUND_RECONCILIATION')
-    $Inputs = ConvertTo-PassressRowSet $Inputs @('HEIRARCHY', 'COST_MASTER', 'OPENING_INVENTORY', 'PRODUCTION', 'SUPPLIERS', 'PURCHASES', 'RETURNS', 'RETURN_INSPECTIONS', 'INVENTORY_ADJUSTMENTS')
+    $Upstream = ConvertTo-PassressRowSet $Upstream @('SALES_FACT', 'REVENUE_EVENTS', 'RAW_CUSTOMERS', 'RAW_VARIANTS', 'REFUND_RECONCILIATION', 'FULFILLMENT_EVENTS', 'ORDER_TRANSACTIONS')
+    $Inputs = ConvertTo-PassressRowSet $Inputs @('HEIRARCHY', 'COST_MASTER', 'OPENING_INVENTORY', 'PRODUCTION', 'SUPPLIERS', 'PURCHASES', 'RETURNS', 'RETURN_INSPECTIONS', 'DELIVERY_CONFIRMATIONS', 'INVENTORY_ADJUSTMENTS')
     $T = @{}; foreach ($n in @('SALES', 'CUSTOMER_BASE', 'SALES_COSTED', 'COGS_EVENTS', 'INVENTORY_MOVEMENTS', 'INVENTORY', 'REFUND_RETURN_RECONCILIATION')) { $T[$n] = New-List }
     $costEx = New-List; $invEx = New-List
 
@@ -134,26 +134,104 @@ function Invoke-PassressOperationsStage {
         $T.CUSTOMER_BASE.Add([ordered]@{ CustomerGID = $cg; CustomerName = $(if ($c) { $c.DisplayName } else { $null }); Phone = $(if ($c) { $c.Phone } else { $null }); Email = $(if ($c) { $c.Email } else { $null }); City = $(if ($c) { $c.City } else { $null }); FirstOrderDate = $(if ($dates.Count) { $dates[0] } else { $null }); LastOrderDate = $(if ($dates.Count) { $dates[$dates.Count - 1] } else { $null }); TotalOrders = $n; TotalGrossSales = (Get-RoundedMoney $a.Gross); TotalRefunds = (Get-RoundedMoney $a.Refunds); TotalNetRevenue = (Get-RoundedMoney $a.Net); AverageOrderValue = $(if ($n -gt 0) { Get-RoundedMoney ($a.Net / $n) } else { $null }); Segment = $seg; RepeatCustomer = ($n -ge 2) })
     }
 
-    # ------------------------------------------------ SALES_COSTED + COGS events (sale side)
-    $costed = @{}
+    # ------------------------------------------------ COGS recognition: explicit, configurable trigger
+    # Events kept distinct: ORDER_CREATED, PAYMENT_CAPTURED, FULFILLMENT (dispatch), DELIVERY (confirmed), physical RETURN, INSPECTION approval.
+    # Recognition uses ONE configured trigger (default DELIVERY). Dispatch without the trigger moves stock to IN_TRANSIT (still company stock, no COGS).
+    $trigger = ([string](Get-PassressConfigValue $Config 'CogsRecognitionTrigger' 'DELIVERY')).Trim().ToUpperInvariant()
+    $validTriggers = @('ORDER_CREATED', 'PAYMENT_CAPTURED', 'FULFILLMENT', 'DELIVERY')
+    if ($validTriggers -notcontains $trigger) { throw ("CONFIG_INVALID: CogsRecognitionTrigger '{0}' - use one of {1}." -f $trigger, ($validTriggers -join ', ')) }
+
+    $dispatchEv = @{}; $deliveryEv = @{}; $seenFe = @{}
+    $addEv = { param([hashtable]$map, [string]$line, $ev) if (-not $map.ContainsKey($line)) { $map[$line] = New-List }; $map[$line].Add($ev) }
+    foreach ($fe in @($Upstream.FULFILLMENT_EVENTS)) {
+        if (-not (ConvertTo-PassressBool $fe.IsValid)) { continue }
+        $eid = [string]$fe.EventID; if ($seenFe.ContainsKey($eid)) { continue }; $seenFe[$eid] = $true
+        $lg = [string]$fe.LineItemGID; $q = [int](Get-Money $fe.Quantity)
+        if ($null -ne $fe.FulfilledDateLocal) { & $addEv $dispatchEv $lg ([pscustomobject]@{ Id = 'FUL-' + $eid; Date = $fe.FulfilledDateLocal; Qty = $q; Source = 'SHOPIFY_FULFILLMENT' }) }
+        if ($null -ne $fe.DeliveredDateLocal) { & $addEv $deliveryEv $lg ([pscustomobject]@{ Id = 'DLV-' + $eid; Date = $fe.DeliveredDateLocal; Qty = $q; Source = 'SHOPIFY_DELIVERED' }) }
+    }
+    # manual delivery confirmations (courier statements etc.)
+    $realByOrder = @{}; $realByName = @{}
     foreach ($f in $real) {
-        $lg = [string]$f.LineItemGID; $q = [int]$f.QtyShipped
-        $unit = $null; $rec = $null; $status = 'OK'; $cogs = $null
-        if ($q -le 0) { $status = 'NOT_SHIPPED'; $cogs = 0.0 }
+        $og = [string]$f.OrderGID; $on = [string]$f.OrderName
+        if ($og) { if (-not $realByOrder.ContainsKey($og)) { $realByOrder[$og] = New-List }; $realByOrder[$og].Add($f) }
+        if ($on) { if (-not $realByName.ContainsKey($on)) { $realByName[$on] = New-List }; $realByName[$on].Add($f) }
+    }
+    $seenConf = @{}
+    foreach ($dc in @($Inputs.DELIVERY_CONFIRMATIONS)) {
+        $cid = [string]$dc.ConfirmationID
+        if ((Test-Blank $cid) -or $seenConf.ContainsKey($cid)) { $costEx.Add((New-PassressException -CheckName 'DELIVERY_CONFIRMATION_ID_INVALID' -Severity ERROR -AffectedRecord $cid -RecommendedAction 'Missing or duplicate ConfirmationID; row ignored.' -RunId $RunId)); continue }
+        $seenConf[$cid] = $true
+        if ($null -eq $dc.DeliveredDate -or (Test-Blank $dc.ConfirmedBy)) { $costEx.Add((New-PassressException -CheckName 'DELIVERY_CONFIRMATION_INCOMPLETE' -Severity ERROR -AffectedRecord $cid -OrderName $dc.OrderName -RecommendedAction 'DeliveredDate and ConfirmedBy are required; row ignored (delivery is never assumed).' -RunId $RunId)); continue }
+        $lines = $null
+        if (-not (Test-Blank $dc.OrderGID) -and $realByOrder.ContainsKey([string]$dc.OrderGID)) { $lines = $realByOrder[[string]$dc.OrderGID] }
+        elseif (-not (Test-Blank $dc.OrderName) -and $realByName.ContainsKey([string]$dc.OrderName)) { $lines = $realByName[[string]$dc.OrderName] }
+        if ($null -eq $lines) { $costEx.Add((New-PassressException -CheckName 'DELIVERY_CONFIRMATION_ORDER_NOT_FOUND' -Severity WARNING -AffectedRecord $cid -OrderName $dc.OrderName -RecommendedAction 'No REAL order matches this confirmation (typo, TEST order, or order outside the extract). Ignored.' -RunId $RunId)); continue }
+        foreach ($f in $lines) {
+            if (-not (Test-Blank $dc.LineItemGID) -and [string]$dc.LineItemGID -ne [string]$f.LineItemGID) { continue }
+            $q = if ($null -ne $dc.Quantity) { [int]$dc.Quantity } else { [int]$f.QtyShipped }
+            & $addEv $deliveryEv ([string]$f.LineItemGID) ([pscustomobject]@{ Id = 'DLVM-' + $cid; Date = $dc.DeliveredDate; Qty = $q; Source = 'MANUAL_CONFIRMATION' })
+        }
+    }
+    $firstCollection = @{}
+    foreach ($tx in @($Upstream.ORDER_TRANSACTIONS | Where-Object { ConvertTo-PassressBool $_.IsSuccessfulCollection })) {
+        $og = [string]$tx.OrderGID; if ($null -eq $tx.ProcessedDateLocal) { continue }
+        if (-not $firstCollection.ContainsKey($og) -or $tx.ProcessedDateLocal -lt $firstCollection[$og]) { $firstCollection[$og] = $tx.ProcessedDateLocal }
+    }
+
+    $costed = @{}; $lineState = @{}
+    $movement = { param($id, $date, $sku, $type, $bucket, [int]$qty, $unit, $srcTable, $srcId)
+        if (Test-Blank $sku) { return }
+        $T.INVENTORY_MOVEMENTS.Add([ordered]@{ MovementID = $id; MovementDate = $date; MovementMonth = (Get-MonthKey $date); SKU = $sku; MovementType = $type; Bucket = $bucket; Quantity = $qty; UnitCost = $unit; Value = $(if ($null -ne $unit) { Get-RoundedMoney ($qty * [double]$unit) } else { $null }); SourceTable = $srcTable; SourceID = $srcId }) }
+    foreach ($f in $real) {
+        $lg = [string]$f.LineItemGID; $cap = [int]$f.QtyShipped
+        $unit = $null; $rec = $null; $status = 'OK'
+        if ($cap -le 0) { $status = 'NOT_SHIPPED' }
         elseif (Test-Blank $f.SKU) {
             $status = 'MISSING_SKU'
             $costEx.Add((New-PassressException -CheckName 'MISSING_SKU_FOR_COSTING' -Severity ERROR -AffectedRecord $lg -OrderName $f.OrderName -Classification 'REAL' -ActualValue $f.ProductTitle -RecommendedAction 'Line has no SKU; COGS cannot be computed (not assumed zero). Set the SKU in Shopify.' -RunId $RunId))
         } else {
-            $rec = Get-PassressEffectiveCost -CostBook $book -SKU $f.SKU -Date $f.OrderDateLocal
+            $rec = Get-PassressEffectiveCost -CostBook $book -SKU $f.SKU -Date $f.OrderDateLocal   # cost valid on the ORIGINAL sale date
             if ($null -eq $rec) {
                 $status = 'MISSING_COST'
                 $costEx.Add((New-PassressException -CheckName 'MISSING_EFFECTIVE_COST' -Severity ERROR -AffectedRecord $lg -OrderName $f.OrderName -Classification 'REAL' -ExpectedValue ('approved cost for ' + $f.SKU + ' valid on ' + (Format-PassressValue $f.OrderDateLocal 'date')) -ActualValue 'none' -RecommendedAction 'Add an approved COST_MASTER row (EffectiveFrom on/before the sale date). COGS stays blank until then.' -RunId $RunId))
-            } else { $unit = $rec.UnitCost; $cogs = Get-RoundedMoney ($q * $unit) }
+            } else { $unit = $rec.UnitCost }
         }
-        $costed[$lg] = [ordered]@{ LineItemGID = $lg; OrderGID = $f.OrderGID; OrderName = $f.OrderName; OrderDateLocal = $f.OrderDateLocal; OrderMonth = $f.OrderMonth; SKU = $f.SKU; ProductTitle = $f.ProductTitle; QtyShipped = $q; NetRevenue = $f.NetRevenue; EffectiveUnitCost = $unit; CostRecordID = $(if ($rec) { $rec.CostRecordID } else { $null }); CostStatus = $status; COGS = $cogs; SellableReturnedQty = 0; COGSReversal = 0.0; NetCOGS = $null; GrossProfit = $null }
-        if ($q -gt 0) {
-            $T.COGS_EVENTS.Add([ordered]@{ EventID = 'COGS-' + $lg; EventType = 'COGS'; LineItemGID = $lg; OrderName = $f.OrderName; SKU = $f.SKU; EventDateLocal = $f.OrderDateLocal; EventMonth = $f.OrderMonth; Quantity = $q; UnitCost = $unit; Amount = $cogs; SourceID = $lg; CostStatus = $(if ($null -eq $cogs) { 'MISSING_COST' } else { 'OK' }) })
+        # evidence -> chronological simulation (dispatch before recognition on the same day)
+        $evs = New-List
+        foreach ($e in @(Get-MapValue $dispatchEv $lg @())) { $evs.Add([pscustomobject]@{ Kind = 'DISPATCH'; Order = 0; Id = $e.Id; Date = $e.Date; Qty = $e.Qty; Source = $e.Source }) }
+        switch ($trigger) {
+            'ORDER_CREATED'    { if ($null -ne $f.OrderDateLocal) { $evs.Add([pscustomobject]@{ Kind = 'RECOGNIZE'; Order = 1; Id = 'ORD-' + $lg; Date = $f.OrderDateLocal; Qty = $cap; Source = 'ORDER_CREATED' }) } }
+            'PAYMENT_CAPTURED' { $pd = Get-MapValue $firstCollection ([string]$f.OrderGID) $null; if ($null -ne $pd) { $evs.Add([pscustomobject]@{ Kind = 'RECOGNIZE'; Order = 1; Id = 'PAY-' + [string]$f.OrderGID; Date = $pd; Qty = $cap; Source = 'PAYMENT_CAPTURED' }) } }
+            'FULFILLMENT'      { foreach ($e in @(Get-MapValue $dispatchEv $lg @())) { $evs.Add([pscustomobject]@{ Kind = 'RECOGNIZE'; Order = 1; Id = 'REC-' + $e.Id; Date = $e.Date; Qty = $e.Qty; Source = $e.Source }) } }
+            'DELIVERY'         { foreach ($e in @(Get-MapValue $deliveryEv $lg @())) { $evs.Add([pscustomobject]@{ Kind = 'RECOGNIZE'; Order = 1; Id = $e.Id; Date = $e.Date; Qty = $e.Qty; Source = $e.Source }) } }
         }
+        $recognized = 0; $inTransit = 0; $extra = 0; $cogsTotal = 0.0; $seenEv = @{}
+        foreach ($e in @($evs | Sort-Object @{ Expression = { $_.Date } }, @{ Expression = { $_.Order } }, @{ Expression = { $_.Id } })) {
+            if ($seenEv.ContainsKey($e.Kind + $e.Id)) { continue }; $seenEv[$e.Kind + $e.Id] = $true
+            if ($e.Kind -eq 'DISPATCH') {
+                $q = [math]::Min([int]$e.Qty, $cap - $recognized - $inTransit); if ($q -le 0) { continue }
+                $inTransit += $q
+                & $movement ('MOV-DSP-' + $lg + '-' + $e.Id + '-OUT') $e.Date $f.SKU 'DISPATCH' 'SELLABLE' (-1 * $q) $unit 'FULFILLMENT_EVENTS' $e.Id
+                & $movement ('MOV-DSP-' + $lg + '-' + $e.Id + '-IN') $e.Date $f.SKU 'DISPATCH' 'IN_TRANSIT' $q $unit 'FULFILLMENT_EVENTS' $e.Id
+            } else {
+                $q = [math]::Min([int]$e.Qty, $cap - $recognized)
+                if ([int]$e.Qty -gt [math]::Max(0, $q)) { $extra += [int]$e.Qty - [math]::Max(0, $q) }
+                if ($q -le 0) { continue }
+                $fromTransit = [math]::Min($q, $inTransit); $fromStock = $q - $fromTransit
+                $inTransit -= $fromTransit; $recognized += $q
+                $amt = if ($null -ne $unit) { Get-RoundedMoney ($q * $unit) } else { $null }
+                if ($null -ne $amt) { $cogsTotal += $amt }
+                $T.COGS_EVENTS.Add([ordered]@{ EventID = 'COGS-' + $lg + '-' + $e.Id; EventType = 'COGS'; LineItemGID = $lg; OrderName = $f.OrderName; SKU = $f.SKU; EventDateLocal = $e.Date; EventMonth = (Get-MonthKey $e.Date); Quantity = $q; UnitCost = $unit; Amount = $amt; SourceID = $e.Source + ':' + $e.Id; CostStatus = $(if ($null -eq $amt) { 'MISSING_COST' } else { 'OK' }) })
+                if ($fromTransit -gt 0) { & $movement ('MOV-SALE-' + $lg + '-' + $e.Id + '-T') $e.Date $f.SKU 'SALE' 'IN_TRANSIT' (-1 * $fromTransit) $unit 'COGS_EVENTS' $e.Id }
+                if ($fromStock -gt 0) { & $movement ('MOV-SALE-' + $lg + '-' + $e.Id + '-S') $e.Date $f.SKU 'SALE' 'SELLABLE' (-1 * $fromStock) $unit 'COGS_EVENTS' $e.Id }
+            }
+        }
+        if ($extra -gt 0) {
+            $costEx.Add((New-PassressException -CheckName 'RECOGNITION_EVIDENCE_EXCEEDS_QUANTITY' -Severity INFO -AffectedRecord $lg -OrderName $f.OrderName -Classification 'REAL' -ExpectedValue $cap -ActualValue ($cap + $extra) -Difference $extra -RecommendedAction 'More delivery/fulfillment evidence than shipped units (e.g. Shopify delivered + courier statement). Extra evidence ignored - COGS recognised once.' -RunId $RunId))
+        }
+        $lineState[$lg] = [pscustomobject]@{ Recognized = $recognized; InTransit = $inTransit; FromTransit = 0; SellableFromRecognized = 0; ReturnedFromRecognized = 0 }
+        $costed[$lg] = [ordered]@{ LineItemGID = $lg; OrderGID = $f.OrderGID; OrderName = $f.OrderName; OrderDateLocal = $f.OrderDateLocal; OrderMonth = $f.OrderMonth; SKU = $f.SKU; ProductTitle = $f.ProductTitle; QtyShipped = $cap; RecognitionTrigger = $trigger; RecognizedQty = $recognized; QtyInTransit = 0; ReturnedFromTransitQty = 0; PendingRecognitionQty = 0; RecognitionStatus = $null; NetRevenue = $f.NetRevenue; EffectiveUnitCost = $unit; CostRecordID = $(if ($rec) { $rec.CostRecordID } else { $null }); CostStatus = $status; COGS = $(if ($recognized -eq 0) { 0.0 } elseif ($null -ne $unit) { Get-RoundedMoney $cogsTotal } else { $null }); SellableReturnedQty = 0; COGSReversal = 0.0; NetCOGS = $null; GrossProfit = $null }
     }
 
     # ------------------------------------------------ physical returns + inspections
@@ -175,9 +253,10 @@ function Invoke-PassressOperationsStage {
         $isReceived = ($receivedStatus -contains $st)
         if ($isReceived -and $null -eq $r.ReceivedDate) { $invEx.Add((New-PassressException -CheckName 'RETURN_RECEIVED_DATE_MISSING' -Severity ERROR -AffectedRecord $rid -OrderName $f.OrderName -RecommendedAction 'Enter ReceivedDate. Treated as not received.' -RunId $RunId)); $isReceived = $false }
         if ($isReceived) {
+            $ls = $lineState[$lg]; $out = [int]$ls.Recognized + [int]$ls.InTransit   # units physically out of the warehouse
             $already = [int](Get-MapValue $receivedByLine $lg 0)
-            if (($already + $qty) -gt [int]$f.QtyShipped) {
-                $invEx.Add((New-PassressException -CheckName 'RETURN_QTY_EXCEEDS_SHIPPED' -Severity ERROR -AffectedRecord $rid -OrderName $f.OrderName -ExpectedValue ('<= ' + ([int]$f.QtyShipped - $already)) -ActualValue $qty -Difference ($already + $qty - [int]$f.QtyShipped) -RecommendedAction 'More units received than were shipped on this line. Return ignored until corrected.' -RunId $RunId))
+            if (($already + $qty) -gt $out) {
+                $invEx.Add((New-PassressException -CheckName 'RETURN_QTY_EXCEEDS_DISPATCHED' -Severity ERROR -AffectedRecord $rid -OrderName $f.OrderName -ExpectedValue ('<= ' + ($out - $already)) -ActualValue $qty -Difference ($already + $qty - $out) -RecommendedAction 'More units received back than were dispatched/delivered on this line (check fulfillment / delivery evidence). Return ignored until corrected.' -RunId $RunId))
                 continue
             }
             Add-ToMap $receivedByLine $lg $qty
@@ -206,23 +285,26 @@ function Invoke-PassressOperationsStage {
             continue
         }
         $ret.Inspected += ($sell + $dmg + $wo)
-        $lg = [string]$f.LineItemGID; $cl = Get-MapValue $costed $lg $null
-        $unit = if ($cl) { $cl.EffectiveUnitCost } else { $null }
+        $lg = [string]$f.LineItemGID; $ls = $lineState[$lg]; $cl = $costed[$lg]; $unit = $cl.EffectiveUnitCost
         $d = $i.InspectionDate; $m = Get-MonthKey $d
-        if ($sell -gt 0) {
-            Add-ToMap $sellableByLine $lg $sell
-            $amt = if ($null -ne $unit) { Get-RoundedMoney (-1 * $sell * $unit) } else { $null }
+        # Units still IN_TRANSIT (never delivered, never costed) come back first; only units whose COGS was recognised can reverse COGS.
+        $avail = [int]$ls.InTransit
+        $sT = [math]::Min($sell, $avail); $avail -= $sT; $dT = [math]::Min($dmg, $avail); $avail -= $dT; $wT = [math]::Min($wo, $avail); $avail -= $wT
+        $sR = $sell - $sT; $dR = $dmg - $dT; $wR = $wo - $wT
+        $ls.InTransit = $avail; $ls.FromTransit += ($sT + $dT + $wT); $ls.SellableFromRecognized += $sR; $ls.ReturnedFromRecognized += ($sR + $dR + $wR)
+        if (($sT + $dT + $wT) -gt 0) { & $movement ('MOV-RT-' + $iid) $d $f.SKU 'RETURN_FROM_TRANSIT' 'IN_TRANSIT' (-1 * ($sT + $dT + $wT)) $unit 'RETURN_INSPECTIONS' $iid }
+        if ($sell -gt 0) { Add-ToMap $sellableByLine $lg $sell; & $movement ('MOV-RS-' + $iid) $d $f.SKU 'RETURN_SELLABLE' 'SELLABLE' $sell $unit 'RETURN_INSPECTIONS' $iid }
+        if ($dmg -gt 0) { Add-ToMap $damagedByLine $lg $dmg; & $movement ('MOV-RD-' + $iid) $d $f.SKU 'RETURN_DAMAGED' 'DAMAGED' $dmg 0 'RETURN_INSPECTIONS' $iid }
+        if ($wo -gt 0) { Add-ToMap $writeoffByLine $lg $wo; & $movement ('MOV-RW-' + $iid) $d $f.SKU 'RETURN_WRITE_OFF' 'WRITTEN_OFF' $wo 0 'RETURN_INSPECTIONS' $iid }
+        if ($sR -gt 0) {
+            $amt = if ($null -ne $unit) { Get-RoundedMoney (-1 * $sR * $unit) } else { $null }
             if ($null -eq $unit) { $costEx.Add((New-PassressException -CheckName 'COGS_REVERSAL_MISSING_COST' -Severity ERROR -AffectedRecord $iid -OrderName $f.OrderName -Classification 'REAL' -RecommendedAction 'Sellable return accepted but the original sale has no cost; reversal value pending the cost.' -RunId $RunId)) }
-            $T.COGS_EVENTS.Add([ordered]@{ EventID = 'COGSREV-' + $iid; EventType = 'COGS_REVERSAL'; LineItemGID = $lg; OrderName = $f.OrderName; SKU = $f.SKU; EventDateLocal = $d; EventMonth = $m; Quantity = (-1 * $sell); UnitCost = $unit; Amount = $amt; SourceID = $iid; CostStatus = $(if ($null -eq $amt) { 'MISSING_COST' } else { 'OK' }) })
-            $T.INVENTORY_MOVEMENTS.Add([ordered]@{ MovementID = 'MOV-RS-' + $iid; MovementDate = $d; MovementMonth = $m; SKU = $f.SKU; MovementType = 'RETURN_SELLABLE'; Bucket = 'SELLABLE'; Quantity = $sell; UnitCost = $unit; Value = $(if ($null -ne $unit) { Get-RoundedMoney ($sell * $unit) } else { $null }); SourceTable = 'RETURN_INSPECTIONS'; SourceID = $iid })
+            $T.COGS_EVENTS.Add([ordered]@{ EventID = 'COGSREV-' + $iid; EventType = 'COGS_REVERSAL'; LineItemGID = $lg; OrderName = $f.OrderName; SKU = $f.SKU; EventDateLocal = $d; EventMonth = $m; Quantity = (-1 * $sR); UnitCost = $unit; Amount = $amt; SourceID = $iid; CostStatus = $(if ($null -eq $amt) { 'MISSING_COST' } else { 'OK' }) })
         }
-        if ($dmg -gt 0) {
-            Add-ToMap $damagedByLine $lg $dmg
-            $T.INVENTORY_MOVEMENTS.Add([ordered]@{ MovementID = 'MOV-RD-' + $iid; MovementDate = $d; MovementMonth = $m; SKU = $f.SKU; MovementType = 'RETURN_DAMAGED'; Bucket = 'DAMAGED'; Quantity = $dmg; UnitCost = 0; Value = 0; SourceTable = 'RETURN_INSPECTIONS'; SourceID = $iid })
-        }
-        if ($wo -gt 0) {
-            Add-ToMap $writeoffByLine $lg $wo
-            $T.INVENTORY_MOVEMENTS.Add([ordered]@{ MovementID = 'MOV-RW-' + $iid; MovementDate = $d; MovementMonth = $m; SKU = $f.SKU; MovementType = 'RETURN_WRITE_OFF'; Bucket = 'WRITTEN_OFF'; Quantity = $wo; UnitCost = 0; Value = 0; SourceTable = 'RETURN_INSPECTIONS'; SourceID = $iid })
+        if (($dT + $wT) -gt 0) {
+            # never-delivered units that came back unusable: stock loss (5100), not COGS of a sale
+            $amt = if ($null -ne $unit) { Get-RoundedMoney (($dT + $wT) * $unit) } else { $null }
+            $T.COGS_EVENTS.Add([ordered]@{ EventID = 'TLOSS-' + $iid; EventType = 'TRANSIT_LOSS'; LineItemGID = $lg; OrderName = $f.OrderName; SKU = $f.SKU; EventDateLocal = $d; EventMonth = $m; Quantity = ($dT + $wT); UnitCost = $unit; Amount = $amt; SourceID = $iid; CostStatus = $(if ($null -eq $amt) { 'MISSING_COST' } else { 'OK' }) })
         }
     }
     foreach ($rid in $returns.Keys) {
@@ -234,9 +316,18 @@ function Invoke-PassressOperationsStage {
 
     # finalize SALES_COSTED
     foreach ($lg in $costed.Keys) {
-        $cl = $costed[$lg]; $s = [int](Get-MapValue $sellableByLine $lg 0)
-        $cl.SellableReturnedQty = $s
-        if ($null -ne $cl.EffectiveUnitCost) { $cl.COGSReversal = Get-RoundedMoney ($s * $cl.EffectiveUnitCost) } else { $cl.COGSReversal = $(if ($s -gt 0) { $null } else { 0.0 }) }
+        $cl = $costed[$lg]; $ls = $lineState[$lg]
+        $sR = [int]$ls.SellableFromRecognized
+        $cl.SellableReturnedQty = $sR; $cl.QtyInTransit = [int]$ls.InTransit; $cl.ReturnedFromTransitQty = [int]$ls.FromTransit
+        $pending = [int]$cl.QtyShipped - [int]$cl.RecognizedQty - [int]$ls.FromTransit
+        if ($pending -lt 0) { $pending = 0 }
+        $cl.PendingRecognitionQty = $pending
+        $cl.RecognitionStatus = if ([int]$cl.QtyShipped -le 0) { 'NOT_SHIPPED' } elseif ($pending -eq 0 -and [int]$cl.RecognizedQty -eq 0) { 'RETURNED_UNDELIVERED' } elseif ($pending -eq 0) { 'RECOGNIZED' } elseif ([int]$cl.RecognizedQty -gt 0) { 'PARTIAL' } else { 'PENDING' }
+        if ($pending -gt 0) {
+            $why = switch ($trigger) { 'DELIVERY' { 'No delivery confirmation (Shopify deliveredAt or a DELIVERY_CONFIRMATIONS row). Delivery is never assumed.' } 'FULFILLMENT' { 'Not fulfilled in Shopify yet.' } 'PAYMENT_CAPTURED' { 'No successful payment captured yet.' } default { 'Order date missing.' } }
+            $costEx.Add((New-PassressException -CheckName 'COGS_PENDING_RECOGNITION' -Severity WARNING -AffectedRecord $lg -OrderName $cl.OrderName -Classification 'REAL' -ExpectedValue ('trigger ' + $trigger) -ActualValue ('{0} of {1} units pending' -f $pending, $cl.QtyShipped) -Difference $pending -RecommendedAction ($why + ' COGS not posted for these units; they stay in stock (IN_TRANSIT if dispatched). Gross margin for the revenue month is overstated until recognised - see the P&L memo line.') -RunId $RunId))
+        }
+        if ($null -ne $cl.EffectiveUnitCost) { $cl.COGSReversal = Get-RoundedMoney ($sR * $cl.EffectiveUnitCost) } else { $cl.COGSReversal = $(if ($sR -gt 0) { $null } else { 0.0 }) }
         if ($null -ne $cl.COGS -and $null -ne $cl.COGSReversal) { $cl.NetCOGS = Get-RoundedMoney ($cl.COGS - $cl.COGSReversal); $cl.GrossProfit = Get-RoundedMoney ([double]$cl.NetRevenue - $cl.NetCOGS) }
         $T.SALES_COSTED.Add($cl)
     }
@@ -270,11 +361,6 @@ function Invoke-PassressOperationsStage {
         $uc = $p.UnitCost
         $T.INVENTORY_MOVEMENTS.Add([ordered]@{ MovementID = 'MOV-PUR-' + $id; MovementDate = $p.ActualDelivery; MovementMonth = (Get-MonthKey $p.ActualDelivery); SKU = $p.SKUOrMaterial; MovementType = 'PURCHASE_RECEIPT'; Bucket = 'SELLABLE'; Quantity = $q; UnitCost = $uc; Value = $(if ($null -ne $uc) { Get-RoundedMoney ($q * [double]$uc) } else { $null }); SourceTable = 'PURCHASES'; SourceID = $id })
     }
-    foreach ($f in $real) {
-        $q = [int]$f.QtyShipped; if ($q -le 0 -or (Test-Blank $f.SKU)) { continue }
-        $cl = $costed[[string]$f.LineItemGID]; $uc = $cl.EffectiveUnitCost
-        $T.INVENTORY_MOVEMENTS.Add([ordered]@{ MovementID = 'MOV-SALE-' + $f.LineItemGID; MovementDate = $f.OrderDateLocal; MovementMonth = $f.OrderMonth; SKU = $f.SKU; MovementType = 'SALE'; Bucket = 'SELLABLE'; Quantity = (-1 * $q); UnitCost = $uc; Value = $(if ($null -ne $uc) { Get-RoundedMoney (-1 * $q * $uc) } else { $null }); SourceTable = 'SALES_FACT'; SourceID = $f.LineItemGID })
-    }
     $seenAdj = @{}
     foreach ($a in @($Inputs.INVENTORY_ADJUSTMENTS)) {
         $id = [string]$a.AdjustmentID
@@ -299,9 +385,9 @@ function Invoke-PassressOperationsStage {
         $mv = @($T.INVENTORY_MOVEMENTS | Where-Object { $_.SKU -eq $sku })
         $sumQ = { param($type, $bucket) $s = 0; foreach ($x in $mv) { if (($null -eq $type -or $x.MovementType -eq $type) -and ($null -eq $bucket -or $x.Bucket -eq $bucket)) { $s += [int]$x.Quantity } }; $s }
         $hasOpening = $openingSku.ContainsKey($sku)
-        $closing = & $sumQ $null 'SELLABLE'; $damaged = & $sumQ $null 'DAMAGED'
-        $value = 0.0; $valueKnown = $true
-        foreach ($x in $mv) { if ($x.Bucket -eq 'SELLABLE') { if ($null -eq $x.Value) { $valueKnown = $false } else { $value += [double]$x.Value } } }
+        $closing = & $sumQ $null 'SELLABLE'; $damaged = & $sumQ $null 'DAMAGED'; $transit = & $sumQ $null 'IN_TRANSIT'
+        $value = 0.0; $tValue = 0.0; $valueKnown = $true
+        foreach ($x in $mv) { if ($x.Bucket -eq 'SELLABLE' -or $x.Bucket -eq 'IN_TRANSIT') { if ($null -eq $x.Value) { $valueKnown = $false } elseif ($x.Bucket -eq 'SELLABLE') { $value += [double]$x.Value } else { $tValue += [double]$x.Value } } }
         $cur = Get-PassressEffectiveCost -CostBook $book -SKU $sku -Date (Get-Date).Date
         $reorder = if ($hier.ContainsKey($sku)) { $hier[$sku].ReorderLevel } else { $null }
         $status = 'OK'
@@ -318,12 +404,12 @@ function Invoke-PassressOperationsStage {
         if ($hasOpening -and $shop.ContainsKey($sku) -and [int]$shop[$sku] -ne $closing) {
             $invEx.Add((New-PassressException -CheckName 'INVENTORY_QTY_MISMATCH_SHOPIFY' -Severity WARNING -AffectedRecord $sku -ExpectedValue $closing -ActualValue ([int]$shop[$sku]) -Difference ([int]$shop[$sku] - $closing) -RecommendedAction 'Ledger closing stock differs from Shopify stock. Count physically and record an approved adjustment (or fix Shopify).' -RunId $RunId))
         }
-        $T.INVENTORY.Add([ordered]@{ SKU = $sku; ProductName = $(if ($hier.ContainsKey($sku) -and $hier[$sku].ProductName) { $hier[$sku].ProductName } else { Get-MapValue $names $sku $null }); OpeningStock = $(if ($hasOpening) { & $sumQ 'OPENING' 'SELLABLE' } else { $null }); ProductionReceived = (& $sumQ 'PRODUCTION_RECEIPT' $null); PurchasesReceived = (& $sumQ 'PURCHASE_RECEIPT' $null); SalesQty = (-1 * (& $sumQ 'SALE' $null)); CustomerReturnsSellable = (& $sumQ 'RETURN_SELLABLE' $null); DamagedReturns = (& $sumQ 'RETURN_DAMAGED' $null); WrittenOffReturns = (& $sumQ 'RETURN_WRITE_OFF' $null); Adjustments = (& $sumQ 'ADJUSTMENT' 'SELLABLE'); ClosingSellable = $closing; DamagedOnHand = $damaged; CurrentUnitCost = $(if ($cur) { $cur.UnitCost } else { $null }); StockValue = $(if ($valueKnown) { Get-RoundedMoney $value } else { $null }); ReorderLevel = $reorder; ShopifyInventoryQty = $(if ($shop.ContainsKey($sku)) { [int]$shop[$sku] } else { $null }); StockStatus = $status })
+        $T.INVENTORY.Add([ordered]@{ SKU = $sku; ProductName = $(if ($hier.ContainsKey($sku) -and $hier[$sku].ProductName) { $hier[$sku].ProductName } else { Get-MapValue $names $sku $null }); OpeningStock = $(if ($hasOpening) { & $sumQ 'OPENING' 'SELLABLE' } else { $null }); ProductionReceived = (& $sumQ 'PRODUCTION_RECEIPT' $null); PurchasesReceived = (& $sumQ 'PURCHASE_RECEIPT' $null); SalesQty = (-1 * (& $sumQ 'SALE' $null)); CustomerReturnsSellable = (& $sumQ 'RETURN_SELLABLE' $null); DamagedReturns = (& $sumQ 'RETURN_DAMAGED' $null); WrittenOffReturns = (& $sumQ 'RETURN_WRITE_OFF' $null); Adjustments = (& $sumQ 'ADJUSTMENT' 'SELLABLE'); ClosingSellable = $closing; DamagedOnHand = $damaged; InTransitQty = $transit; CurrentUnitCost = $(if ($cur) { $cur.UnitCost } else { $null }); StockValue = $(if ($valueKnown) { Get-RoundedMoney $value } else { $null }); InTransitValue = $(if ($valueKnown) { Get-RoundedMoney $tValue } else { $null }); ReorderLevel = $reorder; ShopifyInventoryQty = $(if ($shop.ContainsKey($sku)) { [int]$shop[$sku] } else { $null }); StockStatus = $status })
     }
-    # control: sales movements = shipped quantity of REAL lines with SKU
-    $shippedReal = 0; foreach ($f in $real) { if (-not (Test-Blank $f.SKU)) { $shippedReal += [int]$f.QtyShipped } }
+    # control: SALE movements = recognised quantity of REAL lines with SKU
+    $shippedReal = 0; foreach ($cl in $T.SALES_COSTED) { if (-not (Test-Blank $cl.SKU)) { $shippedReal += [int]$cl.RecognizedQty } }
     $saleMov = 0; foreach ($m in $T.INVENTORY_MOVEMENTS) { if ($m.MovementType -eq 'SALE') { $saleMov += -1 * [int]$m.Quantity } }
-    if ($shippedReal -ne $saleMov) { $invEx.Add((New-PassressException -CheckName 'SALES_VS_INVENTORY_MOVEMENTS' -Severity ERROR -AffectedRecord 'ALL' -ExpectedValue $shippedReal -ActualValue $saleMov -Difference ($saleMov - $shippedReal) -RecommendedAction 'Internal control failed: sales quantity and inventory sale movements differ.' -RunId $RunId)) }
+    if ($shippedReal -ne $saleMov) { $invEx.Add((New-PassressException -CheckName 'SALES_VS_INVENTORY_MOVEMENTS' -Severity ERROR -AffectedRecord 'ALL' -ExpectedValue $shippedReal -ActualValue $saleMov -Difference ($saleMov - $shippedReal) -RecommendedAction 'Internal control failed: recognised sales quantity and inventory SALE movements differ.' -RunId $RunId)) }
 
     # ------------------------------------------------ refund vs return reconciliation
     $returnedByLine = @{}; foreach ($k in $receivedByLine.Keys) { $returnedByLine[$k] = $receivedByLine[$k] }

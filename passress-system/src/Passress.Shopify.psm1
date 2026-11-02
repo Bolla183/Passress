@@ -142,6 +142,11 @@ function Complete-PassressOrderNode {
         $d = Invoke-PassressShopifyGraphQL -Config $Config -Token $Token -Query $q -Variables @{ id = $Order.id }
         $Order.refunds = $d.order.refunds; $Order.transactions = $d.order.transactions
     }
+    if (@($Order.fulfillments).Count -ge 20) {
+        $q = "query(`$id: ID!) { order(id: `$id) { fulfillments(first: 250) { id status displayStatus createdAt deliveredAt fulfillmentLineItems(first: 250) { pageInfo { hasNextPage endCursor } nodes { quantity lineItem { id } } } } } }"
+        $d = Invoke-PassressShopifyGraphQL -Config $Config -Token $Token -Query $q -Variables @{ id = $Order.id }
+        $Order.fulfillments = $d.order.fulfillments
+    }
     foreach ($rf in @($Order.refunds)) {
         if ($null -eq $rf -or -not $rf.refundLineItems.pageInfo.hasNextPage) { continue }
         $q = "query(`$id: ID!, `$after: String) { node(id: `$id) { ... on Refund { refundLineItems(first: 100, after: `$after) { pageInfo { hasNextPage endCursor } nodes { $($script:RefundLineFields) } } } } }"
@@ -178,6 +183,7 @@ query(`$first: Int!, `$after: String, `$query: String) {
       lineItems(first: 50) { pageInfo { hasNextPage endCursor } nodes { $($script:LineFields) } }
       transactions(first: $txCap) { $($script:TxFields) }
       refunds(first: $refundCap) { $($script:RefundFields) }
+      fulfillments(first: 20) { id status displayStatus createdAt deliveredAt fulfillmentLineItems(first: 50) { pageInfo { hasNextPage endCursor } nodes { quantity lineItem { id } } } }
     }
   }
 }

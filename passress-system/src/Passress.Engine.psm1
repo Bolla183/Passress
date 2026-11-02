@@ -54,7 +54,7 @@ function Invoke-PassressStageIO {
             $outTables = $result.Tables; $exceptionTables['EXCEPTIONS'] = $result.Exceptions
         }
         '02_OPERATIONS' {
-            $upstreamRun = & $readUp '01_DATA_SOURCE' @('SALES_FACT', 'REVENUE_EVENTS', 'RAW_CUSTOMERS', 'RAW_VARIANTS', 'REFUND_RECONCILIATION')
+            $upstreamRun = & $readUp '01_DATA_SOURCE' @('SALES_FACT', 'REVENUE_EVENTS', 'RAW_CUSTOMERS', 'RAW_VARIANTS', 'REFUND_RECONCILIATION', 'FULFILLMENT_EVENTS', 'ORDER_TRANSACTIONS')
             $statePath = Join-Path $wb.State 'cost_master_state.json'
             $result = Invoke-PassressOperationsStage -Upstream $up -Inputs $inputs -PreviousCostState (Read-PassressJson $statePath) -Config $Config -RunId $RunId
             $outTables = $result.Tables; $exceptionTables['COST_EXCEPTIONS'] = $result.CostExceptions; $exceptionTables['INVENTORY_EXCEPTIONS'] = $result.InventoryExceptions

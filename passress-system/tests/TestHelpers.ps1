@@ -5,7 +5,7 @@ function New-TestConfig {
     return [pscustomobject]@{
         RootFolder = $Root; ShopDomain = 'example.myshopify.com'; ApiVersion = '2026-07'; Currency = 'EGP'
         TimeZoneWindows = 'Egypt Standard Time'; TimeZoneIana = 'Africa/Cairo'; FinancialYearStartMonth = 1; HistoryStartDate = ''
-        TestOrderTag = 'TEST'; MaxRefundsPerOrder = 250; MaxTransactionsPerOrder = 250
+        TestOrderTag = 'TEST'; MaxRefundsPerOrder = 250; MaxTransactionsPerOrder = 250; CogsRecognitionTrigger = 'DELIVERY'
     }
 }
 
@@ -20,7 +20,8 @@ function New-TOrder {
        Refunds: @{ Id='R1'; At='2026-10-10T10:00:00Z'; Amount=2500; Status='SUCCESS'; Lines=@(@{ Id='RL1'; Line='L1'; Qty=1; Subtotal=2500; Tax=0; Restock='RETURN' }); Shipping=0; Adjust=0 } #>
     param([Parameter(Mandatory)]$Id, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Created, [object[]]$Lines,
           [double]$Received = 0, [object[]]$Refunds = @(), [string]$Cancelled = $null, [bool]$ShopifyTest = $false, [string[]]$Tags = @(),
-          [double]$Shipping = 0, [string]$Customer = 'gid://shopify/Customer/T1')
+          [double]$Shipping = 0, [string]$Customer = 'gid://shopify/Customer/T1',
+          [string]$Fulfilled = '', [string]$Delivered = '', [switch]$NotFulfilled, [switch]$NotDelivered, [switch]$FulfillmentTwice)
     $lineNodes = @(); $sub = 0.0; $disc = 0.0; $tax = 0.0
     foreach ($l in $Lines) {
         $d = if ($l.ContainsKey('Discount')) { [double]$l.Discount } else { 0 }; $t = if ($l.ContainsKey('Tax')) { [double]$l.Tax } else { 0 }
@@ -42,7 +43,16 @@ function New-TOrder {
             refundLineItems = @{ pageInfo = @{ hasNextPage = $false; endCursor = $null }; nodes = $rl }; refundShippingLines = @{ nodes = $ship }; orderAdjustments = @{ nodes = $adj }; transactions = @{ nodes = $rtx } }
         $txs += $rtx
     }
-    $node = @{ id = (OG $Id); name = $Name; createdAt = $Created; processedAt = $Created; updatedAt = $Created; cancelledAt = $(if ($Cancelled) { $Cancelled } else { $null }); cancelReason = $(if ($Cancelled) { 'CUSTOMER' } else { $null })
+    # Default: one SUCCESS fulfillment of every line on the order date, delivered the same day (so COGS is recognised at the
+    # order date under the DELIVERY trigger). -NotDelivered / -NotFulfilled / -FulfillmentTwice drive the recognition tests.
+    $ful = @()
+    if (-not $NotFulfilled) {
+        $fAt = if ($Fulfilled) { $Fulfilled } else { $Created }; $dAt = if ($NotDelivered) { $null } elseif ($Delivered) { $Delivered } else { $Created }
+        $fli = @(); foreach ($l in $Lines) { $fli += @{ quantity = [int]$l.Qty; lineItem = @{ id = (LG $Id $l.Id) } } }
+        $one = @{ id = ('gid://shopify/Fulfillment/{0}-F1' -f $Id); status = 'SUCCESS'; displayStatus = $(if ($dAt) { 'DELIVERED' } else { 'FULFILLED' }); createdAt = $fAt; deliveredAt = $dAt; fulfillmentLineItems = @{ pageInfo = @{ hasNextPage = $false; endCursor = $null }; nodes = $fli } }
+        $ful += $one; if ($FulfillmentTwice) { $ful += $one }
+    }
+    $node = @{ id = (OG $Id); name = $Name; fulfillments = $ful; createdAt = $Created; processedAt = $Created; updatedAt = $Created; cancelledAt = $(if ($Cancelled) { $Cancelled } else { $null }); cancelReason = $(if ($Cancelled) { 'CUSTOMER' } else { $null })
         test = $ShopifyTest; displayFinancialStatus = 'PAID'; displayFulfillmentStatus = 'FULFILLED'; currencyCode = 'EGP'; tags = $Tags; sourceName = 'web'; customer = @{ id = $Customer }
         subtotalPriceSet = (M $sub); totalDiscountsSet = (M $disc); totalShippingPriceSet = (M $Shipping); totalTaxSet = (M $tax); totalPriceSet = (M ($sub + $tax + $Shipping))
         totalReceivedSet = (M $Received); totalRefundedSet = (M $refunded); netPaymentSet = (M ($Received - $refunded))
@@ -80,6 +90,7 @@ function ConvertTo-RoundTrip {
 function Invoke-TestPipeline {
     param([Parameter(Mandatory)][hashtable]$Scenario, [Parameter(Mandatory)]$Config, [Parameter(Mandatory)][string]$TempDir, [string]$RunId = 'RUN-TEST')
     $all = @{}; $sch = Get-PassressSchema
+    if ($Scenario.ContainsKey('Config')) { $c2 = $Config.PSObject.Copy(); foreach ($k in $Scenario.Config.Keys) { $c2 | Add-Member -NotePropertyName $k -NotePropertyValue $Scenario.Config[$k] -Force }; $Config = $c2 }
     $inputsFor = {
         param($stage)
         $h = @{}
@@ -96,7 +107,7 @@ function Invoke-TestPipeline {
 
     $in2 = & $inputsFor '02_OPERATIONS'
     $prev = if ($Scenario.ContainsKey('PreviousCostState')) { [pscustomobject]$Scenario.PreviousCostState } else { $null }
-    $s2 = Invoke-PassressOperationsStage -Upstream @{ SALES_FACT = $all.SALES_FACT; REVENUE_EVENTS = $all.REVENUE_EVENTS; RAW_CUSTOMERS = $all.RAW_CUSTOMERS; RAW_VARIANTS = $all.RAW_VARIANTS; REFUND_RECONCILIATION = $all.REFUND_RECONCILIATION } -Inputs $in2 -PreviousCostState $prev -Config $Config -RunId $RunId
+    $s2 = Invoke-PassressOperationsStage -Upstream @{ SALES_FACT = $all.SALES_FACT; REVENUE_EVENTS = $all.REVENUE_EVENTS; RAW_CUSTOMERS = $all.RAW_CUSTOMERS; RAW_VARIANTS = $all.RAW_VARIANTS; REFUND_RECONCILIATION = $all.REFUND_RECONCILIATION; FULFILLMENT_EVENTS = $all.FULFILLMENT_EVENTS; ORDER_TRANSACTIONS = $all.ORDER_TRANSACTIONS } -Inputs $in2 -PreviousCostState $prev -Config $Config -RunId $RunId
     foreach ($k in $s2.Tables.Keys) { $all[$k] = ConvertTo-RoundTrip '02_OPERATIONS' $k $s2.Tables[$k] (Join-Path $TempDir '02') }
     $all['COST_EXCEPTIONS'] = ConvertTo-RoundTrip '02_OPERATIONS' 'COST_EXCEPTIONS' $s2.CostExceptions (Join-Path $TempDir '02')
     $all['INVENTORY_EXCEPTIONS'] = ConvertTo-RoundTrip '02_OPERATIONS' 'INVENTORY_EXCEPTIONS' $s2.InventoryExceptions (Join-Path $TempDir '02')

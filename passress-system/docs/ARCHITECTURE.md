@@ -65,6 +65,22 @@ carries no cost (approved decision A from Phase 1).
   `restockType = CANCEL` means the item never shipped -> no COGS.
 * `restockType` / `restocked` are stored for information only and are **not** proof of a physical return.
 
+### 4.3a COGS recognition trigger (02) - revised in the pre-build review
+* Six events are tracked separately: **order created**, **payment captured**, **fulfillment (dispatch)**, **delivery confirmed**,
+  **physical return**, **inspection approval**. Only one of the first four is the COGS trigger: config `CogsRecognitionTrigger`
+  = `DELIVERY` (default, approved proposal for Passress) | `FULFILLMENT` | `PAYMENT_CAPTURED` | `ORDER_CREATED`.
+* Delivery evidence = Shopify `fulfillment.deliveredAt` **or** a row in 02 `DELIVERY_CONFIRMATIONS` (courier statement etc.).
+  Delivery is never assumed from "fulfilled", "paid" or a display status.
+* Dispatch without the trigger moves the unit SELLABLE -> **IN_TRANSIT** (still company stock in GL 1300, no COGS); the line is
+  `PENDING` with a `COGS_PENDING_RECOGNITION` warning and the P&L shows a memo line "COGS pending recognition (not posted)".
+* Recognised quantity per line is capped at the shipped quantity and evidence ids are de-duplicated, so Shopify delivered +
+  a courier confirmation + a duplicated fulfillment record recognise COGS **once** (extra evidence -> INFO exception).
+* Unit cost = approved cost valid on the **original sale date**; the reversal uses the same cost.
+* Returns: units still IN_TRANSIT (refused / undelivered COD) come back first and never touch COGS (sellable -> back to stock;
+  damaged / written off -> stock loss 5100, `TRANSIT_LOSS`). Only RECOGNISED units can reverse COGS, and only when SELLABLE.
+* **Policy note:** revenue is still recognised at the order date (unchanged in this review); COGS now follows delivery. See the
+  pre-build review report for the open decision on aligning revenue with the same trigger.
+
 ### 4.3 Physical return, inspection, COGS, inventory (02)
 | Financial refund | Physical return | Inspection | Revenue | COGS | Sellable stock |
 |---|---|---|---|---|---|
@@ -96,8 +112,9 @@ carries no cost (approved decision A from Phase 1).
 | Refund - allocated line | 4200 Refunds, 2200 | 1210 |
 | Refund - unallocated | 4210 Refunds - Unallocated | 1210 |
 | Cancellation (no money) | 4300, 2200 | 1200 |
-| COGS | 5000 | 1300 Inventory FG |
-| COGS reversal (approved SELLABLE return) | 1300 | 5000 |
+| COGS (configured trigger met, e.g. delivery confirmed) | 5000 | 1300 Inventory FG |
+| COGS reversal (approved SELLABLE return of a recognised unit) | 1300 | 5000 |
+| Undelivered unit returned damaged / written off (TRANSIT_LOSS) | 5100 | 1300 |
 | Production / purchase receipt into stock | 1300 | 1310 Materials/WIP/advances |
 | Expense paid by COMPANY | 6xxx (EXPENSE_CATEGORY_MAP) | cash account (1000-1030) |
 | Expense paid PARTNER_PERSONAL | 6xxx | **3010 Partner capital - paid personally** (no company cash) |
@@ -108,7 +125,14 @@ carries no cost (approved decision A from Phase 1).
 | Opening balances (OPENING_BALANCES) | as entered (must balance) | as entered |
 * DATA_ENTRY rows without PaymentSource (COMPANY / PARTNER_PERSONAL), without a cash account where needed, or with an
   unmapped category are **not posted** and flagged; their month is INCOMPLETE.
-* Possible double counting (same partner, same amount, deposit + paid-personally within 3 days) -> warning.
+* Partner capital integrity: a cash deposit posts Dr cash / Cr 3000 exactly once; a cost paid personally posts Dr expense|asset /
+  Cr 3010 and never touches cash. A PARTNER_PERSONAL row sharing a CapitalContributionRef with a deposit is **blocked**
+  (CAPITAL_DOUBLE_COUNT). Same partner+amount within 3 days without a shared ref -> warning; identical partner/date/amount/type
+  rows -> POSSIBLE_DUPLICATE_CAPITAL_ENTRY. Missing evidence -> warning. `CAPITAL_CONTRIBUTIONS` (sub-ledger: partner, funding
+  type, payment source, cash impact, related account, evidence) and `PARTNER_CAPITAL_RECONCILIATION` (sub-ledger vs GL
+  3000/3010/3200 per partner, difference must be 0).
+* Legacy protection: rows with `LegacyType` post only when `ReviewStatus = APPROVED` (and all normal checks pass). Rows marked
+  `PENDING_REVIEW` never post. The migrated TransactionType is a provisional, editable suggestion.
 
 ### 4.6 Statements and controls (03)
 * P&L (monthly; quarterly/annual pivots hide the RATIO rows), preliminary management Balance Sheet, direct Cash Flow,

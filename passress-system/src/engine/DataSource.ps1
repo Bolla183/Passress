@@ -50,13 +50,13 @@ function Invoke-PassressDataSourceStage {
     $currency = [string]$Config.Currency
 
     $T = @{}
-    foreach ($n in @('RAW_ORDERS', 'ORDER_LINE_ITEMS', 'ORDER_TRANSACTIONS', 'RAW_REFUNDS', 'REFUND_LINE_ITEMS', 'REFUND_TRANSACTIONS', 'RAW_CUSTOMERS', 'RAW_PRODUCTS', 'RAW_VARIANTS', 'SALES_FACT', 'REVENUE_EVENTS', 'REFUND_RECONCILIATION')) { $T[$n] = New-List }
+    foreach ($n in @('RAW_ORDERS', 'ORDER_LINE_ITEMS', 'ORDER_TRANSACTIONS', 'RAW_REFUNDS', 'REFUND_LINE_ITEMS', 'REFUND_TRANSACTIONS', 'FULFILLMENT_EVENTS', 'RAW_CUSTOMERS', 'RAW_PRODUCTS', 'RAW_VARIANTS', 'SALES_FACT', 'REVENUE_EVENTS', 'REFUND_RECONCILIATION')) { $T[$n] = New-List }
     $ex = New-List
 
     $resolved = Resolve-PassressClassification -ClassificationRows $ClassificationRows -RunId $RunId
     foreach ($e in $resolved.Exceptions) { $ex.Add($e) }
 
-    $seenOrders = @{}; $seenLines = @{}; $seenRefunds = @{}; $seenTx = @{}; $matchedClassKeys = @{}
+    $seenOrders = @{}; $seenLines = @{}; $seenRefunds = @{}; $seenTx = @{}; $matchedClassKeys = @{}; $seenFul = @{}
 
     foreach ($o in @($OrderNodes)) {
         $gid = [string](Get-JsonValue $o 'id'); $name = [string](Get-JsonValue $o 'name')
@@ -249,6 +249,31 @@ function Invoke-PassressDataSourceStage {
 
             $T.RAW_REFUNDS.Add([ordered]@{ RefundGID = $rgid; OrderGID = $gid; OrderName = $name; RefundCreatedAtUtc = $refCreated; Note = (Get-JsonValue $rf 'note'); TotalRefundedReported = $reported; SuccessfulTransactionTotal = $successTotal; NonSuccessfulTransactionCount = $nonSuccess; RecognitionDateLocal = $latestSuccess; RecognitionMonth = $recMonth; Currency = $currency })
             $T.REFUND_RECONCILIATION.Add([ordered]@{ RefundGID = $rgid; OrderGID = $gid; OrderName = $name; Classification = $classification; RecognitionMonth = $recMonth; SuccessfulTransactionTotal = $successTotal; TotalRefundedReported = $reported; LineAllocatedTotal = $lineAllocTotal; ShippingRefund = $shipRefund; Adjustments = $adjust; Unallocated = $unalloc; RefundedQuantity = $refQty; Status = $status })
+        }
+
+        # ---------------- fulfillments (dispatch / delivery evidence - never assumed)
+        $fulList = @(Get-JsonValue $o 'fulfillments' | Where-Object { $null -ne $_ })
+        if ($fulList.Count -ge [int](Get-PassressConfigValue $Config 'MaxFulfillmentsPerOrder' 250)) {
+            $ex.Add((New-PassressException -CheckName 'FULFILLMENTS_POSSIBLY_TRUNCATED' -Severity ERROR -AffectedRecord $gid -OrderName $name -Classification $classification -ActualValue $fulList.Count -RecommendedAction 'Order has as many fulfillments as the fetch limit; raise MaxFulfillmentsPerOrder.' -RunId $RunId))
+        }
+        foreach ($fu in $fulList) {
+            $fgid = [string](Get-JsonValue $fu 'id'); if (-not $fgid) { continue }
+            $fStatus = ([string](Get-JsonValue $fu 'status')).ToUpperInvariant(); $fDisp = ([string](Get-JsonValue $fu 'displayStatus')).ToUpperInvariant()
+            $fAt = Get-JsonValue $fu 'createdAt'; $dAt = Get-JsonValue $fu 'deliveredAt'
+            $fDate = if (Test-Blank $fAt) { $null } else { ConvertTo-ShopLocalDate -UtcValue $fAt -TimeZone $tz }
+            $dDate = if (Test-Blank $dAt) { $null } else { ConvertTo-ShopLocalDate -UtcValue $dAt -TimeZone $tz }
+            if ($fDisp -eq 'DELIVERED' -and $null -eq $dDate -and $reportable) {
+                $ex.Add((New-PassressException -CheckName 'DELIVERED_STATUS_WITHOUT_DATE' -Severity WARNING -AffectedRecord $fgid -OrderName $name -Classification $classification -RecommendedAction 'Shopify shows DELIVERED but no deliveredAt date; delivery is NOT assumed. Record the date in 02 DELIVERY_CONFIRMATIONS.' -RunId $RunId))
+            }
+            $fliConn = Get-JsonValue $fu 'fulfillmentLineItems'
+            if (ConvertTo-PassressBool (Get-JsonValue $fliConn 'pageInfo.hasNextPage')) { $ex.Add((New-PassressException -CheckName 'FULFILLMENT_LINES_TRUNCATED' -Severity ERROR -AffectedRecord $fgid -OrderName $name -Classification $classification -RecommendedAction 'Not all fulfillment line items were fetched. Re-run the refresh.' -RunId $RunId)) }
+            foreach ($fl in (Get-ConnectionNodes $fliConn)) {
+                $lgid = [string](Get-JsonValue $fl 'lineItem.id'); $eid = $fgid + '|' + $lgid
+                if ($seenFul.ContainsKey($eid)) { $ex.Add((New-PassressException -CheckName 'DUPLICATE_FULFILLMENT_EVENT' -Severity INFO -AffectedRecord $eid -OrderName $name -Classification $classification -RecommendedAction 'Same fulfillment line delivered twice by the API; counted once.' -RunId $RunId)); continue }
+                $seenFul[$eid] = $true
+                if (-not $lines.ContainsKey($lgid)) { $ex.Add((New-PassressException -CheckName 'FULFILLMENT_LINE_NOT_LINKED' -Severity ERROR -AffectedRecord $eid -OrderName $name -Classification $classification -RecommendedAction 'Fulfillment line does not match an original line item.' -RunId $RunId)); continue }
+                $T.FULFILLMENT_EVENTS.Add([ordered]@{ EventID = $eid; FulfillmentGID = $fgid; OrderGID = $gid; OrderName = $name; LineItemGID = $lgid; Quantity = [int](Get-Money (Get-JsonValue $fl 'quantity')); Status = $fStatus; DisplayStatus = $fDisp; IsValid = ($fStatus -eq 'SUCCESS'); FulfilledAtUtc = $fAt; FulfilledDateLocal = $fDate; DeliveredAtUtc = $dAt; DeliveredDateLocal = $dDate; Classification = $classification })
+            }
         }
 
         # ---------------- sales fact + sale / cancellation events

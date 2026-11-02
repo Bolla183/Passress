@@ -279,7 +279,7 @@ function Get-PassressTestScenarios {
 
     # ---------------------------------------------------------------- S15 cancelled unpaid COD
     $S += @{ Name = 'S15_CANCELLED_UNPAID_ORDER'; Rule = 'Cancelled before shipping, nothing paid: revenue reversed, no COGS, no stock movement.'
-        Orders = @(New-TOrder -Id 4001 -Name '#4001' -Created $O -Lines @(@{ Id = 'L1'; Sku = 'SKU-A'; Qty = 1; Price = 2500 }) -Received 0 -Cancelled '2026-10-06T10:00:00Z' -Refunds @(@{ Id = 'R1'; At = '2026-10-06T10:00:00Z'; Amount = 0; Lines = @(@{ Id = 'RL1'; Line = 'L1'; Qty = 1; Subtotal = 2500; Restock = 'CANCEL' }) })); Inputs = (New-BaseInputs)
+        Orders = @(New-TOrder -Id 4001 -Name '#4001' -Created $O -Lines @(@{ Id = 'L1'; Sku = 'SKU-A'; Qty = 1; Price = 2500 }) -Received 0 -NotFulfilled -Cancelled '2026-10-06T10:00:00Z' -Refunds @(@{ Id = 'R1'; At = '2026-10-06T10:00:00Z'; Amount = 0; Lines = @(@{ Id = 'RL1'; Line = 'L1'; Qty = 1; Subtotal = 2500; Restock = 'CANCEL' }) })); Inputs = (New-BaseInputs)
         Assertions = @(
             (A 'S15-01' 'Line net revenue 0' 'SALES_FACT' @{ OrderName = '#4001' } 'value' 'NetRevenue' 0),
             (A 'S15-02' 'Nothing shipped' 'SALES_FACT' @{ OrderName = '#4001' } 'value' 'QtyShipped' 0),
@@ -330,6 +330,204 @@ function Get-PassressTestScenarios {
             (A 'S18-03' 'Line refunded qty 2' 'SALES_FACT' @{ OrderName = '#4301' } 'value' 'QtyRefunded' 2),
             (A 'S18-04' 'Line net revenue 0' 'SALES_FACT' @{ OrderName = '#4301' } 'value' 'NetRevenue' 0),
             (A 'S18-05' 'No quantity mismatch' 'EXCEPTIONS' @{ CheckName = 'LINE_REFUND_QTY_MISMATCH' } 'count' -Expected 0)
+        ) }
+
+    # ================================================================ PRE-BUILD REVIEW: COGS recognition trigger (default DELIVERY)
+    $F6 = '2026-10-06T10:00:00Z'; $D7 = '2026-10-07T10:00:00Z'
+    $one = @(@{ Id = 'L1'; Sku = 'SKU-A'; Qty = 1; Price = 2500 })
+    $refund1 = @(@{ Id = 'R1'; At = '2026-10-10T10:00:00Z'; Amount = 2500; Lines = @(@{ Id = 'RL1'; Line = 'L1'; Qty = 1; Subtotal = 2500; Restock = 'RETURN' }) })
+    $retIns = { param($oid, [int]$qty, [hashtable]$ins) $i = New-BaseInputs
+        $i.RETURNS = @(@{ ReturnID = 'RET-1'; OrderGID = (OG $oid); LineItemGID = (LG $oid 'L1'); SKU = 'SKU-A'; Quantity = $qty; PhysicalReturnStatus = 'RECEIVED'; ReceivedDate = [datetime]'2026-10-12' })
+        if ($ins) { $row = @{ InspectionID = 'INS-1'; ReturnID = 'RET-1'; InspectionDate = [datetime]'2026-10-13'; InspectionStatus = 'COMPLETE'; SellableQty = 0; DamagedQty = 0; WriteOffQty = 0; ApprovedBy = 'Ops' }; foreach ($k in $ins.Keys) { $row[$k] = $ins[$k] }; $i.RETURN_INSPECTIONS = @($row) }
+        return $i }
+
+    $S += @{ Name = 'D01_FULFILLED_NOT_DELIVERED'; Rule = 'Dispatched but no delivery evidence: no COGS, unit moves to IN_TRANSIT (still company stock), line PENDING, memo shows the cost waiting.'
+        Orders = @(New-TOrder -Id 5001 -Name '#5001' -Created $O -Lines $one -Fulfilled $F6 -NotDelivered); Inputs = (New-BaseInputs)
+        Assertions = @(
+            (A 'D01-01' 'Recognition status PENDING' 'SALES_COSTED' @{ LineItemGID = (LG 5001 'L1') } 'value' 'RecognitionStatus' 'PENDING'),
+            (A 'D01-02' 'Pending quantity 1' 'SALES_COSTED' @{ LineItemGID = (LG 5001 'L1') } 'value' 'PendingRecognitionQty' 1),
+            (A 'D01-03' 'COGS 0 (not recognised)' 'SALES_COSTED' @{ LineItemGID = (LG 5001 'L1') } 'value' 'COGS' 0),
+            (A 'D01-04' 'No COGS event' 'COGS_EVENTS' @{ EventType = 'COGS' } 'count' -Expected 0),
+            (A 'D01-05' 'Sellable stock 4' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4),
+            (A 'D01-06' 'In transit 1' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'InTransitQty' 1),
+            (A 'D01-07' 'In-transit value 1,000' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'InTransitValue' 1000),
+            (A 'D01-08' 'P&L COGS 0' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' 0),
+            (A 'D01-09' 'Memo: 1,000 COGS pending' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'COGS pending recognition (memo, not posted)' } 'value' 'Amount' -1000),
+            (A 'D01-10' 'Pending-recognition exception' 'COST_EXCEPTIONS' @{ CheckName = 'COGS_PENDING_RECOGNITION' } 'count' -Expected 1),
+            (A 'D01-11' 'Finished goods still 5,000 in GL' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Inventory - Finished Goods' } 'value' 'Amount' 5000),
+            (A 'D01-12' 'Stock ledger = GL 1300' 'FINANCE_EXCEPTIONS' @{ CheckName = 'INVENTORY_LEDGER_VS_GL' } 'count' -Expected 0)
+        ) }
+    $S += @{ Name = 'D02_DELIVERED'; Rule = 'Delivered (Shopify deliveredAt): COGS recognised once, on the delivery date, from in-transit stock.'
+        Orders = @(New-TOrder -Id 5002 -Name '#5002' -Created $O -Lines $one -Received 2500 -Fulfilled $F6 -Delivered $D7); Inputs = (New-BaseInputs)
+        Assertions = @(
+            (A 'D02-01' 'Recognised 1' 'SALES_COSTED' @{ LineItemGID = (LG 5002 'L1') } 'value' 'RecognizedQty' 1),
+            (A 'D02-02' 'Status RECOGNIZED' 'SALES_COSTED' @{ LineItemGID = (LG 5002 'L1') } 'value' 'RecognitionStatus' 'RECOGNIZED'),
+            (A 'D02-03' 'COGS dated at delivery 2026-10-07' 'COGS_EVENTS' @{ EventType = 'COGS' } 'value' 'EventDateLocal' '2026-10-07'),
+            (A 'D02-04' 'P&L COGS 1,000' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' -1000),
+            (A 'D02-05' 'Nothing left in transit' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'InTransitQty' 0),
+            (A 'D02-06' 'Sellable 4' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4),
+            (A 'D02-07' 'No pending memo' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'COGS pending recognition (memo, not posted)' } 'value' 'Amount' 0)
+        ) }
+    $i = New-BaseInputs; $i.DELIVERY_CONFIRMATIONS = @(@{ ConfirmationID = 'DLV-1'; OrderGID = (OG 5003); OrderName = '#5003'; DeliveredDate = [datetime]'2026-10-08'; Source = 'COURIER_STATEMENT'; ConfirmedBy = 'Ops' })
+    $S += @{ Name = 'D03_DUPLICATE_FULFILLMENT_AND_DELIVERY'; Rule = 'Same fulfillment twice from the API plus a courier confirmation for the same unit: COGS recognised exactly once.'
+        Orders = @(New-TOrder -Id 5003 -Name '#5003' -Created $O -Lines $one -Received 2500 -Fulfilled $F6 -Delivered $D7 -FulfillmentTwice); Inputs = $i
+        Assertions = @(
+            (A 'D03-01' 'One COGS event' 'COGS_EVENTS' @{ EventType = 'COGS' } 'count' -Expected 1),
+            (A 'D03-02' 'COGS 1,000 (not 2,000)' 'COGS_EVENTS' @{ EventType = 'COGS' } 'sum' 'Amount' 1000),
+            (A 'D03-03' 'Earliest evidence date used (Shopify 2026-10-07)' 'COGS_EVENTS' @{ EventType = 'COGS' } 'value' 'EventDateLocal' '2026-10-07'),
+            (A 'D03-04' 'Duplicate fulfillment flagged' 'EXCEPTIONS' @{ CheckName = 'DUPLICATE_FULFILLMENT_EVENT' } 'count' -Expected 1),
+            (A 'D03-05' 'Extra delivery evidence flagged' 'COST_EXCEPTIONS' @{ CheckName = 'RECOGNITION_EVIDENCE_EXCEEDS_QUANTITY' } 'count' -Expected 1),
+            (A 'D03-06' 'Sellable 4, nothing in transit' 'INVENTORY' @{ SKU = 'SKU-A'; InTransitQty = 0 } 'value' 'ClosingSellable' 4)
+        ) }
+    $i = & $retIns 5004 1 @{ SellableQty = 1 }
+    $S += @{ Name = 'D04_DELIVERED_PARTIAL_RETURN'; Rule = '2 delivered, 1 refunded and returned SELLABLE: COGS 2,000 recognised, 1,000 reversed at original cost.'
+        Orders = @(New-TOrder -Id 5004 -Name '#5004' -Created $O -Lines @(@{ Id = 'L1'; Sku = 'SKU-A'; Qty = 2; Price = 2500 }) -Received 5000 -Refunds $refund1); Inputs = $i
+        Assertions = @(
+            (A 'D04-01' 'Recognised 2' 'SALES_COSTED' @{ LineItemGID = (LG 5004 'L1') } 'value' 'RecognizedQty' 2),
+            (A 'D04-02' 'Reversal -1,000' 'COGS_EVENTS' @{ EventType = 'COGS_REVERSAL' } 'value' 'Amount' -1000),
+            (A 'D04-03' 'Net COGS 1,000' 'SALES_COSTED' @{ LineItemGID = (LG 5004 'L1') } 'value' 'NetCOGS' 1000),
+            (A 'D04-04' 'P&L COGS 1,000' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' -1000),
+            (A 'D04-05' 'Sellable 5 - 2 + 1 = 4' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4)
+        ) }
+    $S += @{ Name = 'D05_DELIVERED_REFUND_NO_RETURN'; Rule = 'Delivered, refunded, nothing comes back: revenue -2,500, COGS 1,000 stays, stock unchanged.'
+        Orders = @(New-TOrder -Id 5005 -Name '#5005' -Created $O -Lines $one -Received 2500 -Refunds $refund1); Inputs = (New-BaseInputs)
+        Assertions = @(
+            (A 'D05-01' 'COGS 1,000 kept' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' -1000),
+            (A 'D05-02' 'No reversal' 'COGS_EVENTS' @{ EventType = 'COGS_REVERSAL' } 'count' -Expected 0),
+            (A 'D05-03' 'Sellable 4' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4),
+            (A 'D05-04' 'Net revenue 0' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Net Revenue' } 'value' 'Amount' 0),
+            (A 'D05-05' 'Reconciliation REFUND_ONLY' 'REFUND_RETURN_RECONCILIATION' @{ LineItemGID = (LG 5005 'L1') } 'value' 'Status' 'REFUND_ONLY')
+        ) }
+    $S += @{ Name = 'D06_RETURN_PENDING_INSPECTION'; Rule = 'Delivered, returned, not inspected: no reversal, no sellable stock.'
+        Orders = @(New-TOrder -Id 5006 -Name '#5006' -Created $O -Lines $one -Received 2500 -Refunds $refund1); Inputs = (& $retIns 5006 1 $null)
+        Assertions = @(
+            (A 'D06-01' 'No reversal' 'COGS_EVENTS' @{ EventType = 'COGS_REVERSAL' } 'count' -Expected 0),
+            (A 'D06-02' 'Sellable 4' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4),
+            (A 'D06-03' 'Pending inspection flagged' 'INVENTORY_EXCEPTIONS' @{ CheckName = 'RETURN_PENDING_INSPECTION' } 'count' -Expected 1),
+            (A 'D06-04' 'COGS 1,000 kept' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' -1000)
+        ) }
+    $S += @{ Name = 'D07_RETURN_APPROVED_SELLABLE'; Rule = 'Delivered, returned, approved SELLABLE: reverse 1,000 at original cost, +1 sellable.'
+        Orders = @(New-TOrder -Id 5007 -Name '#5007' -Created $O -Lines $one -Received 2500 -Refunds $refund1); Inputs = (& $retIns 5007 1 @{ SellableQty = 1 })
+        Assertions = @(
+            (A 'D07-01' 'Reversal -1,000' 'COGS_EVENTS' @{ EventType = 'COGS_REVERSAL' } 'value' 'Amount' -1000),
+            (A 'D07-02' 'P&L COGS 0' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' 0),
+            (A 'D07-03' 'Sellable back to 5' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 5),
+            (A 'D07-04' 'Stock ledger = GL 1300' 'FINANCE_EXCEPTIONS' @{ CheckName = 'INVENTORY_LEDGER_VS_GL' } 'count' -Expected 0)
+        ) }
+    $S += @{ Name = 'D08_RETURN_DAMAGED'; Rule = 'Delivered, returned DAMAGED: COGS kept, sellable stock unchanged, damaged bucket +1.'
+        Orders = @(New-TOrder -Id 5008 -Name '#5008' -Created $O -Lines $one -Received 2500 -Refunds $refund1); Inputs = (& $retIns 5008 1 @{ DamagedQty = 1 })
+        Assertions = @(
+            (A 'D08-01' 'COGS 1,000 kept' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' -1000),
+            (A 'D08-02' 'No reversal' 'COGS_EVENTS' @{ EventType = 'COGS_REVERSAL' } 'count' -Expected 0),
+            (A 'D08-03' 'Sellable 4' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4),
+            (A 'D08-04' 'Damaged 1' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'DamagedOnHand' 1),
+            (A 'D08-05' 'No transit loss (unit had been delivered)' 'COGS_EVENTS' @{ EventType = 'TRANSIT_LOSS' } 'count' -Expected 0)
+        ) }
+    $refuse = @(@{ Id = 'R1'; At = '2026-10-09T10:00:00Z'; Amount = 0; Lines = @(@{ Id = 'RL1'; Line = 'L1'; Qty = 1; Subtotal = 2500; Restock = 'RETURN' }) })
+    $S += @{ Name = 'D09_REFUSED_COD_RETURNED_SELLABLE'; Rule = 'COD refused at the door: dispatched, never delivered, cancelled, back in stock - COGS never recognised, nothing to reverse.'
+        Orders = @(New-TOrder -Id 5009 -Name '#5009' -Created $O -Lines $one -Fulfilled $F6 -NotDelivered -Cancelled '2026-10-09T10:00:00Z' -Refunds $refuse); Inputs = (& $retIns 5009 1 @{ SellableQty = 1 })
+        Assertions = @(
+            (A 'D09-01' 'No COGS / reversal / loss events at all' 'COGS_EVENTS' @{} 'count' -Expected 0),
+            (A 'D09-02' 'Status RETURNED_UNDELIVERED' 'SALES_COSTED' @{ LineItemGID = (LG 5009 'L1') } 'value' 'RecognitionStatus' 'RETURNED_UNDELIVERED'),
+            (A 'D09-03' 'Nothing pending' 'COST_EXCEPTIONS' @{ CheckName = 'COGS_PENDING_RECOGNITION' } 'count' -Expected 0),
+            (A 'D09-04' 'Sellable back to 5' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 5),
+            (A 'D09-05' 'Nothing in transit' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'InTransitQty' 0),
+            (A 'D09-06' 'Revenue reversed by cancellation' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Net Revenue' } 'value' 'Amount' 0),
+            (A 'D09-07' 'P&L COGS 0' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' 0)
+        ) }
+    $S += @{ Name = 'D10_UNDELIVERED_RETURNED_DAMAGED'; Rule = 'Never delivered, comes back damaged: no COGS; stock loss 1,000 to write-offs (5100); damaged bucket +1, sellable not increased.'
+        Orders = @(New-TOrder -Id 5010 -Name '#5010' -Created $O -Lines $one -Fulfilled $F6 -NotDelivered -Cancelled '2026-10-09T10:00:00Z' -Refunds $refuse); Inputs = (& $retIns 5010 1 @{ DamagedQty = 1 })
+        Assertions = @(
+            (A 'D10-01' 'Transit loss 1,000' 'COGS_EVENTS' @{ EventType = 'TRANSIT_LOSS' } 'value' 'Amount' 1000),
+            (A 'D10-02' 'Posted as write-off, not COGS' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Inventory Write-offs & Adjustments' } 'value' 'Amount' -1000),
+            (A 'D10-03' 'P&L COGS 0' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' 0),
+            (A 'D10-04' 'Sellable 4 (not increased)' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4),
+            (A 'D10-05' 'Damaged 1' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'DamagedOnHand' 1),
+            (A 'D10-06' 'Stock ledger = GL 1300' 'FINANCE_EXCEPTIONS' @{ CheckName = 'INVENTORY_LEDGER_VS_GL' } 'count' -Expected 0)
+        ) }
+    $S += @{ Name = 'D11_TRIGGER_FULFILLMENT_CONFIG'; Rule = 'Trigger is configurable: with FULFILLMENT, a dispatched-not-delivered unit is costed on the fulfillment date.'; Config = @{ CogsRecognitionTrigger = 'FULFILLMENT' }
+        Orders = @(New-TOrder -Id 5011 -Name '#5011' -Created $O -Lines $one -Fulfilled $F6 -NotDelivered); Inputs = (New-BaseInputs)
+        Assertions = @(
+            (A 'D11-01' 'Recognised on fulfillment date' 'COGS_EVENTS' @{ EventType = 'COGS' } 'value' 'EventDateLocal' '2026-10-06'),
+            (A 'D11-02' 'Trigger recorded on the line' 'SALES_COSTED' @{ LineItemGID = (LG 5011 'L1') } 'value' 'RecognitionTrigger' 'FULFILLMENT'),
+            (A 'D11-03' 'Nothing in transit' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'InTransitQty' 0)
+        ) }
+    $S += @{ Name = 'D12_TRIGGER_PAYMENT_CONFIG'; Rule = 'With PAYMENT_CAPTURED, COGS follows the first successful payment, even without fulfillment data.'; Config = @{ CogsRecognitionTrigger = 'PAYMENT_CAPTURED' }
+        Orders = @(New-TOrder -Id 5012 -Name '#5012' -Created $O -Lines $one -Received 2500 -NotFulfilled); Inputs = (New-BaseInputs)
+        Assertions = @(
+            (A 'D12-01' 'Recognised on payment date' 'COGS_EVENTS' @{ EventType = 'COGS' } 'value' 'EventDateLocal' '2026-10-05'),
+            (A 'D12-02' 'Sellable 4 (taken from stock)' 'INVENTORY' @{ SKU = 'SKU-A' } 'value' 'ClosingSellable' 4)
+        ) }
+
+    # ================================================================ PRE-BUILD REVIEW: partner capital integrity
+    $S += @{ Name = 'C01_PARTNER_CASH_DEPOSIT'; Rule = 'Cash deposit increases company cash exactly once and partner capital (3000); sub-ledger reconciles to GL.'
+        Orders = @(); Inputs = @{ DATA_ENTRY = @(@{ TransactionID = 'TXN-1'; TransactionDate = [datetime]'2026-10-01'; TransactionType = 'CAPITAL_DEPOSIT'; Amount = 10000; PaymentAccount = '1010'; PaidBy = 'Partner A'; SupportingDocument = 'bank-slip-001.pdf' }) }
+        Assertions = @(
+            (A 'C01-01' 'Cash 10,000' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Cash & Bank' } 'value' 'Amount' 10000),
+            (A 'C01-02' 'Exactly one cash posting' 'JOURNAL_ENTRIES' @{ AccountCode = '1010' } 'count' -Expected 1),
+            (A 'C01-03' 'Capital deposits 10,000' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Partner Capital - Cash Deposits (Paid-Up)' } 'value' 'Amount' 10000),
+            (A 'C01-04' 'Sub-ledger reconciles (Partner A OK)' 'PARTNER_CAPITAL_RECONCILIATION' @{ Partner = 'Partner A' } 'value' 'Status' 'OK'),
+            (A 'C01-05' 'Net cash contributed 10,000' 'PARTNER_CAPITAL_RECONCILIATION' @{ Partner = 'Partner A' } 'value' 'NetCashContributed' 10000),
+            (A 'C01-06' 'Cash impact recorded 10,000' 'CAPITAL_CONTRIBUTIONS' @{ TransactionID = 'TXN-1' } 'value' 'CashImpact' 10000),
+            (A 'C01-07' 'Evidence present - no warning' 'FINANCE_EXCEPTIONS' @{ CheckName = 'MISSING_SUPPORTING_EVIDENCE' } 'count' -Expected 0)
+        ) }
+    $S += @{ Name = 'C02_PARTNER_PAID_EXPENSE'; Rule = 'Expense paid personally: expense + capital contribution (3010); company cash untouched.'
+        Orders = @(); Inputs = @{ DATA_ENTRY = @(@{ TransactionID = 'TXN-1'; TransactionDate = [datetime]'2026-10-02'; TransactionType = 'EXPENSE'; Category = 'MARKETING'; Amount = 1500; PaymentSource = 'PARTNER_PERSONAL'; PaidBy = 'Partner B'; SupportingDocument = 'meta-invoice.pdf' }) }
+        Assertions = @(
+            (A 'C02-01' 'Company cash 0' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Cash & Bank' } 'value' 'Amount' 0),
+            (A 'C02-02' 'No cash account posting' 'JOURNAL_ENTRIES' @{ AccountCode = '1010' } 'count' -Expected 0),
+            (A 'C02-03' 'Capital paid personally 1,500' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Partner Capital - Company Costs Paid Personally' } 'value' 'Amount' 1500),
+            (A 'C02-04' 'Marketing expense 1,500' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Marketing' } 'value' 'Amount' -1500),
+            (A 'C02-05' 'Cash impact 0' 'CAPITAL_CONTRIBUTIONS' @{ TransactionID = 'TXN-1' } 'value' 'CashImpact' 0),
+            (A 'C02-06' 'Related expense account 6400' 'CAPITAL_CONTRIBUTIONS' @{ TransactionID = 'TXN-1' } 'value' 'DebitAccount' '6400'),
+            (A 'C02-07' 'Partner B reconciles' 'PARTNER_CAPITAL_RECONCILIATION' @{ Partner = 'Partner B' } 'value' 'Status' 'OK'),
+            (A 'C02-08' 'Operating expenses paid in cash flow 0' 'CASH_FLOW' @{ Month = '2026-10'; LineItem = 'Operating expenses paid' } 'value' 'Amount' 0)
+        ) }
+    $S += @{ Name = 'C03_DUPLICATE_CAPITAL_CONTRIBUTION'; Rule = 'Same contribution as deposit AND paid-personally (shared reference) is blocked; identical duplicate deposits are flagged.'
+        Orders = @(); Inputs = @{ DATA_ENTRY = @(
+            @{ TransactionID = 'TXN-1'; TransactionDate = [datetime]'2026-10-01'; TransactionType = 'CAPITAL_DEPOSIT'; Amount = 2000; PaymentAccount = '1010'; PaidBy = 'Partner A'; CapitalContributionRef = 'CAP-01'; SupportingDocument = 'slip-1' },
+            @{ TransactionID = 'TXN-2'; TransactionDate = [datetime]'2026-10-01'; TransactionType = 'EXPENSE'; Category = 'PACKAGING'; Amount = 2000; PaymentSource = 'PARTNER_PERSONAL'; PaidBy = 'Partner A'; CapitalContributionRef = 'CAP-01'; SupportingDocument = 'receipt-1' },
+            @{ TransactionID = 'TXN-3'; TransactionDate = [datetime]'2026-10-01'; TransactionType = 'CAPITAL_DEPOSIT'; Amount = 2000; PaymentAccount = '1010'; PaidBy = 'Partner A'; SupportingDocument = 'slip-2' }) }
+        Assertions = @(
+            (A 'C03-01' 'Double count blocked' 'FINANCE_EXCEPTIONS' @{ CheckName = 'CAPITAL_DOUBLE_COUNT'; AffectedRecord = 'TXN-2' } 'count' -Expected 1),
+            (A 'C03-02' 'Blocked row not posted' 'JOURNAL_ENTRIES' @{ SourceID = 'TXN-2' } 'count' -Expected 0),
+            (A 'C03-03' 'Identical deposits flagged' 'FINANCE_EXCEPTIONS' @{ CheckName = 'POSSIBLE_DUPLICATE_CAPITAL_ENTRY' } 'count' -Expected 1),
+            (A 'C03-04' 'Paid-personally capital 0' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Partner Capital - Company Costs Paid Personally' } 'value' 'Amount' 0),
+            (A 'C03-05' 'Cash = deposits actually posted (4,000)' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Cash & Bank' } 'value' 'Amount' 4000),
+            (A 'C03-06' 'Partner A reconciles' 'PARTNER_CAPITAL_RECONCILIATION' @{ Partner = 'Partner A' } 'value' 'Status' 'OK'),
+            (A 'C03-07' 'Month INCOMPLETE until resolved' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Net Profit' } 'value' 'Status' 'INCOMPLETE')
+        ) }
+
+    # ================================================================ PRE-BUILD REVIEW: legacy protection
+    $S += @{ Name = 'L01_UNPOSTED_LEGACY_TRANSACTIONS'; Rule = 'Migrated rows post only after ReviewStatus = APPROVED and a PaymentSource; historical production payments go to inventory, never COGS.'
+        Orders = @(); Inputs = @{ DATA_ENTRY = @(
+            @{ TransactionID = 'LEG-0001'; TransactionDate = [datetime]'2026-10-01'; TransactionType = 'CAPITAL_DEPOSIT'; Amount = 68892; PaidBy = 'Partner P'; LegacyType = 'Capital' },
+            @{ TransactionID = 'LEG-0002'; TransactionDate = [datetime]'2026-10-02'; TransactionType = 'PRODUCTION_PAYMENT'; Amount = 7500; LegacyType = 'COGS'; LegacyCategory = 'PRODUCTION'; ReviewStatus = 'PENDING_REVIEW' },
+            @{ TransactionID = 'LEG-0003'; TransactionDate = [datetime]'2026-10-03'; TransactionType = 'EXPENSE'; Category = 'SAMPLE'; Amount = 1000; LegacyType = 'EXPENSES'; ReviewStatus = 'APPROVED'; ReviewedBy = 'Finance' },
+            @{ TransactionID = 'LEG-0004'; TransactionDate = [datetime]'2026-10-04'; TransactionType = 'PRODUCTION_PAYMENT'; Amount = 3000; LegacyType = 'COGS'; ReviewStatus = 'APPROVED'; ReviewedBy = 'Finance'; PaymentSource = 'PARTNER_PERSONAL'; PaidBy = 'Partner A'; SupportingDocument = 'receipt' }) }
+        Assertions = @(
+            (A 'L01-01' 'Two unreviewed legacy rows blocked' 'FINANCE_EXCEPTIONS' @{ CheckName = 'LEGACY_ROW_PENDING_REVIEW' } 'count' -Expected 2),
+            (A 'L01-02' 'LEG-0001 not posted' 'JOURNAL_ENTRIES' @{ SourceID = 'LEG-0001' } 'count' -Expected 0),
+            (A 'L01-03' 'LEG-0002 not posted' 'JOURNAL_ENTRIES' @{ SourceID = 'LEG-0002' } 'count' -Expected 0),
+            (A 'L01-04' 'Approved but no PaymentSource -> not posted' 'FINANCE_EXCEPTIONS' @{ CheckName = 'MISSING_PARTNER_FUNDING_CLASSIFICATION'; AffectedRecord = 'LEG-0003' } 'count' -Expected 1),
+            (A 'L01-05' 'LEG-0003 not posted' 'JOURNAL_ENTRIES' @{ SourceID = 'LEG-0003' } 'count' -Expected 0),
+            (A 'L01-06' 'Approved + complete row posted (2 lines)' 'JOURNAL_ENTRIES' @{ SourceID = 'LEG-0004' } 'count' -Expected 2),
+            (A 'L01-07' 'Historical production payment is NOT COGS' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Cost of Goods Sold' } 'value' 'Amount' 0),
+            (A 'L01-08' 'It is held as materials/WIP 3,000' 'BALANCE_SHEET' @{ Month = '2026-10'; LineItem = 'Inventory - Materials, WIP & Advances' } 'value' 'Amount' 3000),
+            (A 'L01-09' 'Month INCOMPLETE while rows wait' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Net Profit' } 'value' 'Status' 'INCOMPLETE')
+        ) }
+
+    # ================================================================ PRE-BUILD REVIEW: refund transaction status
+    $S += @{ Name = 'R01_PENDING_AND_FAILED_REFUNDS'; Rule = 'Pending and failed refund transactions are logged but never recognised as money refunded.'
+        Orders = @(New-TOrder -Id 5101 -Name '#5101' -Created $O -Lines $one -Received 2500 -Refunds @(
+            @{ Id = 'R1'; At = '2026-10-10T10:00:00Z'; Amount = 2500; Status = 'PENDING'; Lines = @(@{ Id = 'RL1'; Line = 'L1'; Qty = 1; Subtotal = 2500; Restock = 'NO_RESTOCK' }) },
+            @{ Id = 'R2'; At = '2026-10-11T10:00:00Z'; Amount = 2500; Status = 'FAILURE'; Lines = @(@{ Id = 'RL2'; Line = 'L1'; Qty = 1; Subtotal = 2500; Restock = 'NO_RESTOCK' }) })); Inputs = (New-BaseInputs)
+        Assertions = @(
+            (A 'R01-01' 'No refund recognised' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Refunds (line-item allocated)' } 'value' 'Amount' 0),
+            (A 'R01-02' 'Net revenue 2,500' 'PROFIT_AND_LOSS' @{ Month = '2026-10'; LineItem = 'Net Revenue' } 'value' 'Amount' 2500),
+            (A 'R01-03' 'Both flagged as not successful' 'EXCEPTIONS' @{ CheckName = 'REFUND_TRANSACTION_NOT_SUCCESSFUL' } 'count' -Expected 2),
+            (A 'R01-04' 'No successful refund transaction' 'REFUND_TRANSACTIONS' @{ IsSuccessfulRefund = $true } 'count' -Expected 0),
+            (A 'R01-05' 'Line refunded qty 0' 'SALES_FACT' @{ OrderName = '#5101' } 'value' 'QtyRefunded' 0)
         ) }
     return $S
 }

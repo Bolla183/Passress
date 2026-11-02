@@ -76,10 +76,10 @@ function Invoke-PassressFinanceStage {
         foreach ($l in $Lines) {
             if ([double]$l.Debit -eq 0 -and [double]$l.Credit -eq 0) { continue }
             $n++
-            $J.Add([pscustomobject][ordered]@{ JournalID = $Id; LineNo = $n; EntryDate = $Date; Month = (Get-MonthKey $Date); AccountCode = [string]$l.Account; AccountName = $coa[[string]$l.Account].AccountName; Debit = (Get-RoundedMoney ([double]$l.Debit)); Credit = (Get-RoundedMoney ([double]$l.Credit)); SourceType = $SourceType; SourceID = $SourceId; OrderName = $OrderName; SKU = $Sku; Counterparty = $Counterparty; Description = $Description })
+            $J.Add([pscustomobject][ordered]@{ JournalID = $Id; LineNo = $n; EntryDate = $Date; Month = (Get-MonthKey $Date); AccountCode = [string]$l.Account; AccountName = $coa[[string]$l.Account].AccountName; Debit = (Get-RoundedMoney ([double]$l.Debit)); Credit = (Get-RoundedMoney ([double]$l.Credit)); SourceType = $SourceType; SourceID = $SourceId; OrderName = $OrderName; SKU = $Sku; Counterparty = $(if ($l.Cp) { [string]$l.Cp } else { $Counterparty }); Description = $Description })
         }
     }
-    function L { param($a, $d, $c) return @{ Account = $a; Debit = $d; Credit = $c } }
+    function L { param($a, $d, $c, $cp) return @{ Account = $a; Debit = $d; Credit = $c; Cp = $cp } }
 
     # ------------------------------------------------ Shopify revenue (REAL only)
     $testOrders = @{}; foreach ($f in @($Upstream.SALES_FACT)) { if (-not $f.IsReportable) { $testOrders[[string]$f.OrderName] = [string]$f.Classification } }
@@ -116,7 +116,8 @@ function Invoke-PassressFinanceStage {
     foreach ($c in @($Upstream.COGS_EVENTS)) {
         if ($null -eq $c.Amount) { $costMissingMonths[[string]$c.EventMonth] = $true; continue }
         $a = [double]$c.Amount
-        if ($a -ge 0) { & $addJournal ('JE-' + $c.EventID) $c.EventDateLocal @((L '5000' $a 0), (L '1300' 0 $a)) 'COGS' $c.EventID $c.OrderName $c.SKU $null 'COGS at effective unit cost' }
+        if ($c.EventType -eq 'TRANSIT_LOSS') { & $addJournal ('JE-' + $c.EventID) $c.EventDateLocal @((L '5100' $a 0), (L '1300' 0 $a)) 'INVENTORY' $c.EventID $c.OrderName $c.SKU $null 'Undelivered unit returned damaged / written off (stock loss, not COGS of a sale)'; continue }
+        if ($a -ge 0) { & $addJournal ('JE-' + $c.EventID) $c.EventDateLocal @((L '5000' $a 0), (L '1300' 0 $a)) 'COGS' $c.EventID $c.OrderName $c.SKU $null 'COGS recognised (configured trigger met) at effective unit cost' }
         else { & $addJournal ('JE-' + $c.EventID) $c.EventDateLocal @((L '1300' (-$a) 0), (L '5000' 0 (-$a))) 'COGS' $c.EventID $c.OrderName $c.SKU $null 'COGS reversal - approved SELLABLE return at original cost' }
     }
     foreach ($m in $costMissingMonths.Keys) { $monthIssues[$m] = $true }
@@ -142,6 +143,14 @@ function Invoke-PassressFinanceStage {
     $spendTypes = @('EXPENSE', 'PRODUCTION_PAYMENT', 'INVENTORY_PURCHASE', 'ASSET_PURCHASE', 'OTHER_EXPENSE')
     $allTypes = $spendTypes + @('CAPITAL_DEPOSIT', 'OWNER_WITHDRAWAL', 'OTHER_INCOME', 'COD_REMITTANCE', 'COD_FEE', 'TRANSFER')
     $seenTx = @{}; $deposits = New-List
+    # cash deposits by CapitalContributionRef - used to stop the same partner money being booked twice (3000 and 3010)
+    $depositRefs = @{}
+    foreach ($r in @($Inputs.DATA_ENTRY)) { if (([string]$r.TransactionType).Trim().ToUpperInvariant() -eq 'CAPITAL_DEPOSIT' -and -not (Test-Blank $r.CapitalContributionRef) -and -not (Test-Blank $r.TransactionID)) { $depositRefs[([string]$r.CapitalContributionRef).Trim().ToUpperInvariant()] = [string]$r.TransactionID } }
+    $addCapital = {
+        param($r, [string]$fundingType, [double]$signedAmount, [double]$cashImpact, [string]$debitAccount)
+        $capital.Add([ordered]@{ TransactionID = [string]$r.TransactionID; TransactionDate = $r.TransactionDate; Partner = [string]$r.PaidBy; FundingType = $fundingType; PaymentSource = $r.PaymentSource; Amount = $signedAmount; CashImpact = $cashImpact; DebitAccount = $debitAccount; DebitAccountName = $(if ($coa.ContainsKey($debitAccount)) { $coa[$debitAccount].AccountName } else { $null }); RelatedCategory = $(if ($r.Category) { $r.Category } else { $r.TransactionType }); CapitalContributionRef = $r.CapitalContributionRef; SupportingDocument = $r.SupportingDocument; Description = $r.Description })
+        if (Test-Blank $r.SupportingDocument) { $ex.Add((New-PassressException -CheckName 'MISSING_SUPPORTING_EVIDENCE' -Severity WARNING -AffectedRecord ([string]$r.TransactionID) -ActualValue $fundingType -RecommendedAction 'Partner-funded transaction without SupportingDocument (bank slip, receipt, invoice). Posted, but attach evidence.' -RunId $RunId)) }
+    }
     foreach ($r in @($Inputs.DATA_ENTRY)) {
         $id = [string]$r.TransactionID; $date = $r.TransactionDate; $type = ([string]$r.TransactionType).Trim().ToUpperInvariant(); $amt = $r.Amount
         $mk = Get-MonthKey $date
@@ -149,6 +158,10 @@ function Invoke-PassressFinanceStage {
         if (Test-Blank $id) { $ex.Add((New-PassressException -CheckName 'TRANSACTION_WITHOUT_ID' -Severity ERROR -AffectedRecord ('row dated ' + (Format-PassressValue $date 'date')) -RecommendedAction 'Every DATA_ENTRY row needs a unique TransactionID. Not posted.' -RunId $RunId)); if ($mk) { $monthIssues[$mk] = $true }; continue }
         if ($seenTx.ContainsKey($id)) { $ex.Add((New-PassressException -CheckName 'DUPLICATE_TRANSACTION_ID' -Severity ERROR -AffectedRecord $id -RecommendedAction 'Duplicate TransactionID: only the first row is posted (prevents double counting).' -RunId $RunId)); continue }
         $seenTx[$id] = $true
+        # review gate: migrated legacy rows (and any row marked PENDING_REVIEW) are never posted until approved
+        $review = ([string]$r.ReviewStatus).Trim().ToUpperInvariant()
+        if (-not (Test-Blank $r.LegacyType) -and $review -ne 'APPROVED') { & $fail 'LEGACY_ROW_PENDING_REVIEW' ('Migrated legacy row (original type "' + $r.LegacyType + '", category "' + $r.LegacyCategory + '"). TransactionType is only a provisional suggestion: confirm it, set PaymentSource / PaymentAccount, then ReviewStatus = APPROVED and ReviewedBy.'); continue }
+        if ($review -eq 'PENDING_REVIEW') { & $fail 'ROW_PENDING_REVIEW' 'ReviewStatus = PENDING_REVIEW.'; continue }
         if ($null -eq $date) { & $fail 'TRANSACTION_DATE_MISSING' 'Enter TransactionDate.'; continue }
         if ($null -eq $amt -or [double]$amt -le 0) { & $fail 'TRANSACTION_AMOUNT_INVALID' 'Amount must be a positive number.'; continue }
         if ($allTypes -notcontains $type) { & $fail 'TRANSACTION_TYPE_INVALID' ('TransactionType must be one of: ' + ($allTypes -join ', ') + '.'); continue }
@@ -176,8 +189,11 @@ function Invoke-PassressFinanceStage {
                 & $addJournal ('JE-' + $id) $date @((L $debit $amt 0), (L $payAcct 0 $amt)) 'DATA_ENTRY' $id $null $r.ProductSKU $r.Supplier $desc
             } elseif ($src -eq 'PARTNER_PERSONAL') {
                 if (Test-Blank $paidBy) { & $fail 'MISSING_PARTNER_NAME' 'PARTNER_PERSONAL rows need PaidBy (the partner).'; continue }
+                $ref = ([string]$r.CapitalContributionRef).Trim().ToUpperInvariant()
+                if ($ref -and $depositRefs.ContainsKey($ref)) { & $fail 'CAPITAL_DOUBLE_COUNT' ('CapitalContributionRef ' + $ref + ' is also used by cash deposit ' + $depositRefs[$ref] + '. The same partner money cannot be both deposited into the company (3000) and paid personally (3010). If the company paid the supplier from that deposit, record this cost as PaymentSource = COMPANY.'); continue }
+                # Dr expense/asset, Cr 3010 - company cash is NOT touched
                 & $addJournal ('JE-' + $id) $date @((L $debit $amt 0), (L '3010' 0 $amt)) 'DATA_ENTRY' $id $null $r.ProductSKU $paidBy ($desc + ' (paid personally by partner - capital contribution)')
-                $capital.Add([ordered]@{ TransactionID = $id; TransactionDate = $date; Partner = $paidBy; ContributionType = 'PAID_PERSONALLY'; Amount = $amt; DebitAccount = $debit; CapitalContributionRef = $r.CapitalContributionRef; Description = $desc })
+                & $addCapital $r 'PAID_PERSONALLY' $amt 0 $debit
             } else { & $fail 'MISSING_PARTNER_FUNDING_CLASSIFICATION' 'PaymentSource must be COMPANY or PARTNER_PERSONAL (was it paid from company money or personally by a partner?).'; continue }
             continue
         }
@@ -185,14 +201,15 @@ function Invoke-PassressFinanceStage {
             'CAPITAL_DEPOSIT' {
                 if (-not (& $isCash $payAcct)) { & $fail 'MISSING_PAYMENT_ACCOUNT' 'CAPITAL_DEPOSIT needs PaymentAccount = the company cash/bank account that received the money.'; break }
                 if (Test-Blank $paidBy) { & $fail 'MISSING_PARTNER_NAME' 'CAPITAL_DEPOSIT needs PaidBy (the partner).'; break }
+                # Dr company cash (exactly once), Cr 3000
                 & $addJournal ('JE-' + $id) $date @((L $payAcct $amt 0), (L '3000' 0 $amt)) 'DATA_ENTRY' $id $null $null $paidBy ($desc + ' (partner cash deposit)')
-                $capital.Add([ordered]@{ TransactionID = $id; TransactionDate = $date; Partner = $paidBy; ContributionType = 'CASH_DEPOSIT'; Amount = $amt; DebitAccount = $payAcct; CapitalContributionRef = $r.CapitalContributionRef; Description = $desc })
+                & $addCapital $r 'CASH_DEPOSIT' $amt $amt $payAcct
                 $deposits.Add([pscustomobject]@{ Id = $id; Date = $date; Partner = $paidBy; Amount = $amt })
             }
             'OWNER_WITHDRAWAL' {
                 if (-not (& $isCash $payAcct)) { & $fail 'MISSING_PAYMENT_ACCOUNT' 'OWNER_WITHDRAWAL needs PaymentAccount.'; break }
                 & $addJournal ('JE-' + $id) $date @((L '3200' $amt 0), (L $payAcct 0 $amt)) 'DATA_ENTRY' $id $null $null $paidBy $desc
-                $capital.Add([ordered]@{ TransactionID = $id; TransactionDate = $date; Partner = $paidBy; ContributionType = 'WITHDRAWAL'; Amount = (-1 * $amt); DebitAccount = '3200'; CapitalContributionRef = $r.CapitalContributionRef; Description = $desc })
+                & $addCapital $r 'WITHDRAWAL' (-1 * $amt) (-1 * $amt) '3200'
             }
             'OTHER_INCOME' { if (-not (& $isCash $payAcct)) { & $fail 'MISSING_PAYMENT_ACCOUNT' 'OTHER_INCOME needs PaymentAccount.'; break }; & $addJournal ('JE-' + $id) $date @((L $payAcct $amt 0), (L '7000' 0 $amt)) 'DATA_ENTRY' $id $null $null $r.Supplier $desc }
             'COD_REMITTANCE' { if (-not (& $isCash $payAcct)) { & $fail 'MISSING_PAYMENT_ACCOUNT' 'COD_REMITTANCE needs PaymentAccount (where the courier paid you).'; break }; & $addJournal ('JE-' + $id) $date @((L $payAcct $amt 0), (L '1210' 0 $amt)) 'DATA_ENTRY' $id $null $null $r.Supplier $desc }
@@ -204,12 +221,15 @@ function Invoke-PassressFinanceStage {
             }
         }
     }
-    foreach ($c in @($capital | Where-Object { $_.ContributionType -eq 'PAID_PERSONALLY' })) {
+    foreach ($c in @($capital | Where-Object { $_.FundingType -eq 'PAID_PERSONALLY' })) {
         foreach ($d in $deposits) {
             if ($d.Partner -eq $c.Partner -and (Test-MoneyEqual $d.Amount $c.Amount) -and [math]::Abs(($d.Date - $c.TransactionDate).TotalDays) -le 3) {
                 $ex.Add((New-PassressException -CheckName 'POSSIBLE_DOUBLE_COUNT_CAPITAL' -Severity WARNING -AffectedRecord ($c.TransactionID + ' / ' + $d.Id) -ActualValue $c.Amount -RecommendedAction 'Same partner, same amount within 3 days recorded both as a cash deposit and as a cost paid personally. If the partner paid the supplier directly, delete the deposit row (or vice versa).' -RunId $RunId))
             }
         }
+    }
+    foreach ($grp in (@($capital) | Group-Object { '{0}|{1}|{2}|{3}' -f $_.Partner, (Format-PassressValue $_.TransactionDate 'date'), (Format-PassressValue $_.Amount 'number'), $_.FundingType })) {
+        if ($grp.Count -gt 1) { $ex.Add((New-PassressException -CheckName 'POSSIBLE_DUPLICATE_CAPITAL_ENTRY' -Severity WARNING -AffectedRecord ((@($grp.Group | ForEach-Object { $_.TransactionID })) -join ' / ') -ActualValue $grp.Name -RecommendedAction 'Two or more partner-capital rows with the same partner, date, amount and funding type. Delete the duplicate unless they are genuinely separate payments (then add a CapitalContributionRef to each).' -RunId $RunId)) }
     }
 
     # ------------------------------------------------ opening balances
@@ -220,7 +240,7 @@ function Invoke-PassressFinanceStage {
         $ex.Add((New-PassressException -CheckName 'MISSING_OPENING_BALANCES' -Severity ERROR -AffectedRecord 'OPENING_BALANCES' -RecommendedAction 'Enter opening cash/bank balances, opening inventory value and opening partner capital with evidence. Until then the Balance Sheet and Cash Flow are INCOMPLETE (nothing is assumed).' -RunId $RunId))
     } else {
         foreach ($grp in ($openRows | Group-Object { Format-PassressValue $_.AsOfDate 'date' })) {
-            $lines = @(); foreach ($o in $grp.Group) { $lines += (L ([string]$o.AccountCode) (Get-Money $o.Debit) (Get-Money $o.Credit)); if ([string]$o.AccountCode -eq '1300') { $openingGLInventory += (Get-Money $o.Debit) - (Get-Money $o.Credit) } }
+            $lines = @(); foreach ($o in $grp.Group) { $lines += (L ([string]$o.AccountCode) (Get-Money $o.Debit) (Get-Money $o.Credit) $o.Counterparty); if ([string]$o.AccountCode -eq '1300') { $openingGLInventory += (Get-Money $o.Debit) - (Get-Money $o.Credit) } }
             $dr = Get-SumOf -Items $lines -Property 'Debit'; $cr = Get-SumOf -Items $lines -Property 'Credit'
             if (-not (Test-MoneyEqual $dr $cr)) { $ex.Add((New-PassressException -CheckName 'OPENING_BALANCES_UNBALANCED' -Severity ERROR -AffectedRecord ('as of ' + $grp.Name) -ExpectedValue $dr -ActualValue $cr -Difference (Get-RoundedMoney ($dr - $cr)) -RecommendedAction 'Opening debits must equal credits (balance with partner capital / retained earnings, with evidence). Not posted.' -RunId $RunId)); $openingMissing = $true; continue }
             & $addJournal ('JE-OPENING-' + $grp.Name) $grp.Group[0].AsOfDate $lines 'OPENING' ('OPENING-' + $grp.Name) $null $null $null 'Opening balances'
@@ -228,6 +248,26 @@ function Invoke-PassressFinanceStage {
     }
     if (-not (Test-MoneyEqual $openingInvValue $openingGLInventory)) {
         $ex.Add((New-PassressException -CheckName 'OPENING_INVENTORY_GL_MISMATCH' -Severity ERROR -AffectedRecord '1300' -ExpectedValue (Get-RoundedMoney $openingInvValue) -ActualValue (Get-RoundedMoney $openingGLInventory) -Difference (Get-RoundedMoney ($openingGLInventory - $openingInvValue)) -RecommendedAction 'Opening inventory value in 02 OPENING_INVENTORY must equal the 1300 opening balance in OPENING_BALANCES.' -RunId $RunId))
+    }
+
+    # ------------------------------------------------ partner capital reconciliation (sub-ledger vs GL 3000/3010/3200 by partner)
+    $partnerRows = @{}
+    $getP = { param($n) $k = if (Test-Blank $n) { '(unassigned)' } else { ([string]$n).Trim() }; if (-not $partnerRows.ContainsKey($k)) { $partnerRows[$k] = @{ Opening = 0.0; Dep = 0.0; Pers = 0.0; Wd = 0.0; G3000 = 0.0; G3010 = 0.0; G3200 = 0.0 } }; return $partnerRows[$k] }
+    foreach ($c in $capital) { $p = & $getP $c.Partner; switch ($c.FundingType) { 'CASH_DEPOSIT' { $p.Dep += [double]$c.Amount } 'PAID_PERSONALLY' { $p.Pers += [double]$c.Amount } 'WITHDRAWAL' { $p.Wd += -1 * [double]$c.Amount } } }
+    foreach ($l in $J) {
+        if (@('3000', '3010', '3200') -notcontains [string]$l.AccountCode) { continue }
+        $p = & $getP $l.Counterparty; $v = [double]$l.Credit - [double]$l.Debit
+        switch ([string]$l.AccountCode) { '3000' { $p.G3000 += $v } '3010' { $p.G3010 += $v } '3200' { $p.G3200 += $v } }
+        if ($l.SourceType -eq 'OPENING') { $p.Opening += $v }
+    }
+    $PCR = New-List
+    foreach ($k in @($partnerRows.Keys | Sort-Object)) {
+        $p = $partnerRows[$k]
+        $sub = Get-RoundedMoney ($p.Opening + $p.Dep + $p.Pers - $p.Wd); $gl = Get-RoundedMoney ($p.G3000 + $p.G3010 + $p.G3200); $diff = Get-RoundedMoney ($gl - $sub)
+        $st = if (Test-MoneyEqual $diff 0) { 'OK' } else { 'MISMATCH' }
+        $PCR.Add([ordered]@{ Partner = $k; OpeningCapital = (Get-RoundedMoney $p.Opening); CashDeposits = (Get-RoundedMoney $p.Dep); PaidPersonally = (Get-RoundedMoney $p.Pers); Withdrawals = (Get-RoundedMoney $p.Wd); SubledgerBalance = $sub; GL3000 = (Get-RoundedMoney $p.G3000); GL3010 = (Get-RoundedMoney $p.G3010); GL3200 = (Get-RoundedMoney $p.G3200); GLBalance = $gl; Difference = $diff; NetCashContributed = (Get-RoundedMoney ($p.Dep - $p.Wd)); Status = $st })
+        if ($st -ne 'OK') { $ex.Add((New-PassressException -CheckName 'PARTNER_CAPITAL_MISMATCH' -Severity ERROR -AffectedRecord $k -ExpectedValue $sub -ActualValue $gl -Difference $diff -RecommendedAction 'Partner capital in the ledger differs from the capital sub-ledger. Check postings to 3000/3010/3200 for this partner.' -RunId $RunId)) }
+        if ($k -eq '(unassigned)' -and -not (Test-MoneyEqual $gl 0)) { $ex.Add((New-PassressException -CheckName 'CAPITAL_WITHOUT_PARTNER' -Severity WARNING -AffectedRecord $k -ActualValue $gl -RecommendedAction 'Capital postings without a partner name (opening balances without Counterparty?). Add the partner so balances are traceable.' -RunId $RunId)) }
     }
 
     # ------------------------------------------------ trial balance / statements
@@ -253,6 +293,7 @@ function Invoke-PassressFinanceStage {
     $balOf = { param($m, $a) if ($tbByMonth[$m].ContainsKey($a)) { return [double]$tbByMonth[$m][$a].Bal } return 0.0 }
     $typeAccounts = { param($t) @($accounts | Where-Object { $coa[$_].AccountType -eq $t }) }
 
+    $pendingByMonth = @{}; foreach ($c in @($Upstream.SALES_COSTED)) { if ([int](Get-Money $c.PendingRecognitionQty) -gt 0 -and $null -ne $c.EffectiveUnitCost) { Add-ToMap $pendingByMonth ([string]$c.OrderMonth) ([double]$c.PendingRecognitionQty * [double]$c.EffectiveUnitCost) } }
     $PL = New-List; $plNet = @{}; $plRev = @{}; $plCogs = @{}; $plOpex = @{}; $plMarketing = @{}; $plGP = @{}
     $inv = [System.Globalization.CultureInfo]::InvariantCulture
     foreach ($m in $months) {
@@ -266,6 +307,7 @@ function Invoke-PassressFinanceStage {
         & $add 40 'REVENUE' 'Refunds (line-item allocated)' (-$ref); & $add 45 'REVENUE' 'Refunds (unallocated)' (-$refU); & $add 50 'REVENUE' 'Cancellations' (-$canc)
         & $add 60 'REVENUE' 'Net Revenue' $netRev
         & $add 70 'COGS' 'Cost of Goods Sold' (-$cogs); & $add 75 'COGS' 'Inventory Write-offs & Adjustments' (-$wo)
+        & $add 76 'MEMO' 'COGS pending recognition (memo, not posted)' (Get-RoundedMoney (-1 * [double](Get-MapValue $pendingByMonth $m 0)))
         & $add 80 'GROSS' 'Gross Profit' $gp; & $add 85 'RATIO' 'Gross Margin %' (Get-SafeDivide $gp $netRev)
         $opex = 0.0; $o = 100
         foreach ($a in (& $typeAccounts 'EXPENSE')) { $v = & $mov $m $a 1; $opex += $v; & $add $o 'OPEX' $coa[$a].AccountName (-$v); $o++ }
@@ -388,7 +430,7 @@ function Invoke-PassressFinanceStage {
     $evTotal = 0.0; foreach ($ev in @($Upstream.REVENUE_EVENTS | Where-Object { $_.IsReportable })) { $evTotal += [double]$ev.NetAmount }
     if (-not (Test-MoneyEqual $plTotalRev $evTotal)) { $ex.Add((New-PassressException -CheckName 'PL_REVENUE_VS_REVENUE_EVENTS' -Severity ERROR -AffectedRecord 'ALL' -ExpectedValue (Get-RoundedMoney $evTotal) -ActualValue (Get-RoundedMoney $plTotalRev) -Difference (Get-RoundedMoney ($plTotalRev - $evTotal)) -RecommendedAction 'Net revenue in the P&L differs from the REAL revenue ledger (an event failed to post - see other exceptions).' -RunId $RunId)) }
     if (-not (Test-MoneyEqual $plTotalRev $ppNetTotal)) { $ex.Add((New-PassressException -CheckName 'PRODUCT_PL_VS_PL' -Severity ERROR -AffectedRecord 'ALL' -ExpectedValue (Get-RoundedMoney $plTotalRev) -ActualValue (Get-RoundedMoney $ppNetTotal) -Difference (Get-RoundedMoney ($ppNetTotal - $plTotalRev)) -RecommendedAction 'Product P&L (incl. order-level rows) must reconcile to P&L net revenue.' -RunId $RunId)) }
-    $cogsEv = 0.0; foreach ($c in @($Upstream.COGS_EVENTS)) { if ($null -ne $c.Amount) { $cogsEv += [double]$c.Amount } }
+    $cogsEv = 0.0; foreach ($c in @($Upstream.COGS_EVENTS)) { if ($null -ne $c.Amount -and $c.EventType -ne 'TRANSIT_LOSS') { $cogsEv += [double]$c.Amount } }
     $cogsPl = 0.0; foreach ($m in $months) { $cogsPl += (& $mov $m '5000' 1) }
     if (-not (Test-MoneyEqual $cogsEv $cogsPl)) { $ex.Add((New-PassressException -CheckName 'PL_COGS_VS_OPERATIONS' -Severity ERROR -AffectedRecord 'ALL' -ExpectedValue (Get-RoundedMoney $cogsEv) -ActualValue (Get-RoundedMoney $cogsPl) -Difference (Get-RoundedMoney ($cogsPl - $cogsEv)) -RecommendedAction 'COGS in the P&L differs from 02 COGS_EVENTS.' -RunId $RunId)) }
     $dr = Get-SumOf -Items $journal -Property 'Debit'; $cr = Get-SumOf -Items $journal -Property 'Credit'
@@ -398,6 +440,14 @@ function Invoke-PassressFinanceStage {
     $expPl = 0.0; foreach ($m in $months) { $expPl += $plOpex[$m] }
     $expFromCod = 0.0; foreach ($l in $journal) { if ($l.SourceType -ne 'DATA_ENTRY' -and $coa[$l.AccountCode].AccountType -eq 'EXPENSE') { $expFromCod += [double]$l.Debit - [double]$l.Credit } }
     if (-not (Test-MoneyEqual ($expPosted + $expFromCod) $expPl)) { $ex.Add((New-PassressException -CheckName 'EXPENSES_ENTERED_VS_PL' -Severity ERROR -AffectedRecord 'ALL' -ExpectedValue (Get-RoundedMoney ($expPosted + $expFromCod)) -ActualValue (Get-RoundedMoney $expPl) -RecommendedAction 'Posted expenses differ from P&L operating expenses.' -RunId $RunId)) }
+
+    # inventory: stock ledger value (SELLABLE + IN_TRANSIT) must equal GL 1300 when all values and the opening balance are known
+    $ledgerVal = 0.0; $ledgerKnown = $true
+    foreach ($mv in @($Upstream.INVENTORY_MOVEMENTS)) { if ($mv.Bucket -eq 'SELLABLE' -or $mv.Bucket -eq 'IN_TRANSIT') { if ($null -eq $mv.Value) { $ledgerKnown = $false } else { $ledgerVal += [double]$mv.Value } } }
+    $gl1300 = if ($bal.ContainsKey('1300')) { [double]$bal['1300'] } else { 0.0 }
+    if ($ledgerKnown -and (-not $openingMissing -or (Test-MoneyEqual $openingInvValue 0)) -and -not (Test-MoneyEqual $ledgerVal $gl1300)) {
+        $ex.Add((New-PassressException -CheckName 'INVENTORY_LEDGER_VS_GL' -Severity WARNING -AffectedRecord '1300' -ExpectedValue (Get-RoundedMoney $ledgerVal) -ActualValue (Get-RoundedMoney $gl1300) -Difference (Get-RoundedMoney ($gl1300 - $ledgerVal)) -RecommendedAction 'Stock ledger value differs from the finished-goods account (receipts without value, or opening balance mismatch).' -RunId $RunId))
+    }
 
     # ------------------------------------------------ month close
     $closeStatus = New-List; $snap = @{}
@@ -415,6 +465,6 @@ function Invoke-PassressFinanceStage {
     }
     $snapObj = New-Object psobject; foreach ($k in $snap.Keys) { $snapObj | Add-Member -NotePropertyName $k -NotePropertyValue $snap[$k] }
 
-    $tables = @{ JOURNAL_ENTRIES = $journal; TRIAL_BALANCE = $TB.ToArray(); PROFIT_AND_LOSS = $PL.ToArray(); BALANCE_SHEET = $BS.ToArray(); CASH_FLOW = $CF.ToArray(); ORDER_PROFITABILITY = $OP.ToArray(); PRODUCT_PL = $PP.ToArray(); CAPITAL_CONTRIBUTIONS = $capital.ToArray(); MONTH_CLOSE_STATUS = $closeStatus.ToArray() }
+    $tables = @{ JOURNAL_ENTRIES = $journal; TRIAL_BALANCE = $TB.ToArray(); PROFIT_AND_LOSS = $PL.ToArray(); BALANCE_SHEET = $BS.ToArray(); CASH_FLOW = $CF.ToArray(); ORDER_PROFITABILITY = $OP.ToArray(); PRODUCT_PL = $PP.ToArray(); CAPITAL_CONTRIBUTIONS = $capital.ToArray(); PARTNER_CAPITAL_RECONCILIATION = $PCR.ToArray(); MONTH_CLOSE_STATUS = $closeStatus.ToArray() }
     return [pscustomobject]@{ Tables = $tables; Exceptions = (Get-UniqueExceptions $ex.ToArray()); CloseSnapshots = $snapObj; Months = $months; MonthIssues = $monthIssues }
 }

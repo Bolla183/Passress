@@ -1,5 +1,7 @@
 # PASSRESS — Phase 2 Report (Implementation Foundation)
 
+> **Superseded in part by `PRE_BUILD_REVIEW.md` (2026-11-02):** COGS is no longer recognised "at sale"; it follows a configurable trigger (default: confirmed delivery). Partner-capital and legacy-row rules were tightened. Read that report for the current rules.
+
 **Date:** 2026-11-01 · **Status:** code written and statically verified. Workbooks **not yet built** and PowerShell tests **not yet run**: both need a Windows PC with Excel (details in §1 and §7).
 
 ---

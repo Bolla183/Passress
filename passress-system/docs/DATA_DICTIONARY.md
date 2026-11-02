@@ -1,6 +1,6 @@
 # PASSRESS - Data Dictionary
 
-Generated from `schemas/tables.json` (schema version 2.0.0). **INPUT** tables are typed by the operator in Excel; **OUTPUT** tables are produced by the engine and loaded by Power Query (read-only).
+Generated from `schemas/tables.json` (schema version 2.1.0). **INPUT** tables are typed by the operator in Excel; **OUTPUT** tables are produced by the engine and loaded by Power Query (read-only).
 
 ## 01_DATA_SOURCE  (`01_DATA_SOURCE\01_DATA_SOURCE.xlsx`)
 
@@ -143,6 +143,27 @@ Refund transactions only (subset of ORDER_TRANSACTIONS) for the money-refund aud
 | ProcessedDateLocal | date | Shop-local date |
 | Amount | number | Amount |
 | IsSuccessfulRefund | bool | Counts as money refunded |
+
+### FULFILLMENT_EVENTS - OUTPUT
+
+One row per Shopify fulfillment x original line item: dispatch date and (only if Shopify has it) delivery date. Evidence for COGS recognition - never assumed.
+
+| Column | Type | Meaning |
+|---|---|---|
+| EventID | text | FulfillmentGID/LineItemGID (deduplicated) |
+| FulfillmentGID | text | Fulfillment |
+| OrderGID | text | Order |
+| OrderName | text | Order name |
+| LineItemGID | text | ORIGINAL line item |
+| Quantity | int | Quantity in this fulfillment |
+| Status | text | SUCCESS / CANCELLED / ERROR / FAILURE |
+| DisplayStatus | text | Shopify display status (information only) |
+| IsValid | bool | Status = SUCCESS |
+| FulfilledAtUtc | datetime | Fulfillment createdAt (dispatch) |
+| FulfilledDateLocal | date | Dispatch date, shop time zone |
+| DeliveredAtUtc | datetime | deliveredAt - blank when the courier/app did not report delivery |
+| DeliveredDateLocal | date | Delivery date, shop time zone |
+| Classification | text | Order classification |
 
 ### RAW_CUSTOMERS - OUTPUT
 
@@ -449,6 +470,22 @@ Inspection / restock decision per return. Only COMPLETE + approved rows affect C
 | InspectionNotes | text | Notes |
 | ApprovedBy | text | Required for COMPLETE |
 
+### DELIVERY_CONFIRMATIONS - INPUT
+
+Delivery confirmations Shopify does not have (courier statement, COD collected by courier). Used as COGS recognition evidence when the trigger is DELIVERY. Duplicates of Shopify evidence never recognise COGS twice.
+
+| Column | Type | Meaning |
+|---|---|---|
+| ConfirmationID | text | Unique e.g. DLV-0001 |
+| OrderGID | text | Order GID (or use OrderName) |
+| OrderName | text | Order name e.g. #1010 |
+| LineItemGID | text | Optional: one line only (blank = every line of the order) |
+| Quantity | int | Optional: units delivered (blank = all remaining) |
+| DeliveredDate | date | Date the customer received the goods |
+| Source | text | COURIER_STATEMENT / COURIER_PORTAL / CUSTOMER_CONFIRMATION / OTHER |
+| ConfirmedBy | text | Required |
+| Notes | text | Notes |
+
 ### INVENTORY_ADJUSTMENTS - INPUT
 
 Approved stock adjustments (count differences, damage found in stock, write-offs of on-hand stock).
@@ -524,12 +561,18 @@ SALES_FACT (REAL lines) joined to the cost valid on the ORIGINAL sale date.
 | SKU | text | SKU |
 | ProductTitle | text | Product |
 | QtyShipped | int | COGS quantity |
+| RecognitionTrigger | text | Configured COGS trigger (ORDER_CREATED / PAYMENT_CAPTURED / FULFILLMENT / DELIVERY) |
+| RecognizedQty | int | Units whose COGS is recognised (trigger evidence present) |
+| QtyInTransit | int | Dispatched, trigger not yet met (still company stock) |
+| ReturnedFromTransitQty | int | Units returned before delivery (refused/undelivered) - never costed |
+| PendingRecognitionQty | int | Shipped units still waiting for the trigger |
+| RecognitionStatus | text | RECOGNIZED / PARTIAL / PENDING / RETURNED_UNDELIVERED / NOT_SHIPPED |
 | NetRevenue | number | Line net revenue |
 | EffectiveUnitCost | number | Unit cost valid on sale date (blank if missing - never zero-filled) |
 | CostRecordID | text | COST_MASTER row used |
 | CostStatus | text | OK / MISSING_SKU / MISSING_COST / NOT_SHIPPED |
-| COGS | number | QtyShipped x EffectiveUnitCost (blank if cost missing) |
-| SellableReturnedQty | int | Approved SELLABLE returns |
+| COGS | number | RecognizedQty x EffectiveUnitCost (blank if cost missing) |
+| SellableReturnedQty | int | Approved SELLABLE returns of RECOGNISED units (these reverse COGS) |
 | COGSReversal | number | SellableReturnedQty x original EffectiveUnitCost |
 | NetCOGS | number | COGS - COGSReversal |
 | GrossProfit | number | NetRevenue - NetCOGS (blank if cost missing) |
@@ -540,8 +583,8 @@ COGS ledger with idempotent event IDs (sale COGS + sellable-return reversals).
 
 | Column | Type | Meaning |
 |---|---|---|
-| EventID | text | COGS-<line> / COGSREV-<inspection> |
-| EventType | text | COGS / COGS_REVERSAL |
+| EventID | text | COGS-<line>-<evidence> / COGSREV-<inspection> / TLOSS-<inspection> |
+| EventType | text | COGS (trigger met) / COGS_REVERSAL (approved SELLABLE return of a recognised unit) / TRANSIT_LOSS (undelivered unit returned damaged/written off -> 5100) |
 | LineItemGID | text | Original line |
 | OrderName | text | Order |
 | SKU | text | SKU |
@@ -563,8 +606,8 @@ Traceable stock ledger. SELLABLE, DAMAGED and WRITTEN_OFF buckets are separate.
 | MovementDate | date | Date |
 | MovementMonth | text | yyyy-MM |
 | SKU | text | SKU |
-| MovementType | text | OPENING / PRODUCTION_RECEIPT / PURCHASE_RECEIPT / SALE / RETURN_SELLABLE / RETURN_DAMAGED / RETURN_WRITE_OFF / ADJUSTMENT |
-| Bucket | text | SELLABLE / DAMAGED / WRITTEN_OFF |
+| MovementType | text | OPENING / PRODUCTION_RECEIPT / PURCHASE_RECEIPT / DISPATCH / SALE / RETURN_FROM_TRANSIT / RETURN_SELLABLE / RETURN_DAMAGED / RETURN_WRITE_OFF / ADJUSTMENT |
+| Bucket | text | SELLABLE / IN_TRANSIT (dispatched, not yet delivered - still company stock) / DAMAGED / WRITTEN_OFF |
 | Quantity | int | Signed |
 | UnitCost | number | Cost per unit carried (0 for damaged/write-off returns whose COGS was kept) |
 | Value | number | Quantity x UnitCost (blank if cost missing) |
@@ -582,15 +625,17 @@ Stock position per SKU from the movement ledger.
 | OpeningStock | int | OPENING (blank if missing) |
 | ProductionReceived | int | Production receipts |
 | PurchasesReceived | int | Purchase receipts |
-| SalesQty | int | Shipped (REAL) |
+| SalesQty | int | Units whose COGS is recognised (REAL) |
 | CustomerReturnsSellable | int | Returns accepted SELLABLE |
 | DamagedReturns | int | Returns DAMAGED |
 | WrittenOffReturns | int | Returns WRITE_OFF |
 | Adjustments | int | Sellable adjustments |
 | ClosingSellable | int | Sellable on hand |
 | DamagedOnHand | int | Damaged on hand |
+| InTransitQty | int | Dispatched, delivery not confirmed |
 | CurrentUnitCost | number | Latest approved cost |
 | StockValue | number | Ledger value of sellable stock |
+| InTransitValue | number | Ledger value of in-transit stock |
 | ReorderLevel | int | From HEIRARCHY |
 | ShopifyInventoryQty | int | Shopify snapshot (check only) |
 | StockStatus | text | OK / LOW / NEGATIVE / INCOMPLETE |
@@ -724,6 +769,8 @@ Manual transactions Shopify cannot know. Never re-enter Shopify orders/refunds h
 | Reference | text | Invoice / receipt number |
 | SupportingDocument | text | File name or link of the evidence |
 | Notes | text | Notes |
+| ReviewStatus | text | Blank or APPROVED = may post. PENDING_REVIEW = never posted. Migrated legacy rows must be APPROVED before they post. |
+| ReviewedBy | text | Who approved the row |
 | LegacyType | text | Original TRANSACTION TYPE (migrated rows) |
 | LegacyCategory | text | Original CATEGORY (migrated rows) |
 
@@ -798,7 +845,7 @@ Monthly P&L (long format: one row per month x line).
 | Quarter | text | yyyy-Qn |
 | Year | int | Year |
 | SortOrder | int | Display order |
-| Section | text | REVENUE / COGS / GROSS / OPEX / OPERATING / OTHER / NET / RATIO (percentages - never summed) |
+| Section | text | REVENUE / COGS / GROSS / OPEX / OPERATING / OTHER / NET / RATIO (percentages - never summed) / MEMO (not posted, information only) |
 | LineItem | text | Line |
 | Amount | number | Amount (EGP) |
 | Status | text | PRELIMINARY / INCOMPLETE |
@@ -878,18 +925,43 @@ Product P&L per SKU (REAL), line-level refund allocation. Unallocated refunds sh
 
 ### CAPITAL_CONTRIBUTIONS - OUTPUT
 
-Partner capital: cash deposits vs expenses paid personally, per partner.
+Partner capital sub-ledger: every partner-funded transaction (cash deposit, cost paid personally, withdrawal) with its cash impact and evidence.
 
 | Column | Type | Meaning |
 |---|---|---|
-| TransactionID | text | Source transaction |
+| TransactionID | text | Source DATA_ENTRY row |
 | TransactionDate | date | Date |
-| Partner | text | Partner |
-| ContributionType | text | CASH_DEPOSIT / PAID_PERSONALLY / WITHDRAWAL |
-| Amount | number | Signed amount (withdrawal negative) |
-| DebitAccount | text | What the company received |
-| CapitalContributionRef | text | Reference |
+| Partner | text | Partner (PaidBy) |
+| FundingType | text | CASH_DEPOSIT / PAID_PERSONALLY / WITHDRAWAL |
+| PaymentSource | text | COMPANY / PARTNER_PERSONAL as entered |
+| Amount | number | Signed capital effect (withdrawal negative) |
+| CashImpact | number | Effect on company cash: deposit +amount, paid personally 0, withdrawal -amount |
+| DebitAccount | text | What the company received (cash, expense or asset account) |
+| DebitAccountName | text | Account name |
+| RelatedCategory | text | Expense category / transaction type of the related company cost |
+| CapitalContributionRef | text | Reference grouping a contribution |
+| SupportingDocument | text | Evidence (blank = flagged) |
 | Description | text | Description |
+
+### PARTNER_CAPITAL_RECONCILIATION - OUTPUT
+
+Per partner: capital sub-ledger vs general ledger (3000 + 3010 + 3200 by counterparty). Difference must be 0.
+
+| Column | Type | Meaning |
+|---|---|---|
+| Partner | text | Partner ((unassigned) = capital line without a partner name) |
+| OpeningCapital | number | From OPENING_BALANCES (Counterparty) |
+| CashDeposits | number | CAPITAL_DEPOSIT total (3000) |
+| PaidPersonally | number | Company costs paid personally (3010) |
+| Withdrawals | number | Withdrawals (3200) |
+| SubledgerBalance | number | Opening + deposits + paid personally - withdrawals |
+| GL3000 | number | Ledger 3000 for this partner (credit positive) |
+| GL3010 | number | Ledger 3010 for this partner |
+| GL3200 | number | Ledger 3200 for this partner (negative = withdrawn) |
+| GLBalance | number | GL3000 + GL3010 + GL3200 |
+| Difference | number | GLBalance - SubledgerBalance (must be 0) |
+| NetCashContributed | number | Deposits - withdrawals (company cash effect) |
+| Status | text | OK / MISMATCH |
 
 ### FINANCE_EXCEPTIONS - OUTPUT
 

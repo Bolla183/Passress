@@ -9,6 +9,7 @@
   "FinancialYearStartMonth": 1,
   "HistoryStartDate": "",
   "TestOrderTag": "TEST",
+  "CogsRecognitionTrigger": "DELIVERY",
   "OrdersPageSize": 10,
   "RefundsFirstPage": 20,
   "TransactionsFirstPage": 50,

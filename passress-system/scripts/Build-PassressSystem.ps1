@@ -63,8 +63,9 @@ $lists = @{
     PURCHASES = @{ ItemType = @('SKU', 'MATERIAL'); Status = @('ORDERED', 'PARTIAL', 'RECEIVED', 'CANCELLED') }
     RETURNS = @{ PhysicalReturnStatus = @('NOT_RETURNED', 'RETURN_REQUESTED', 'IN_TRANSIT', 'RECEIVED', 'INSPECTION_PENDING', 'CLOSED') }
     RETURN_INSPECTIONS = @{ InspectionStatus = @('PENDING_INSPECTION', 'COMPLETE') }
+    DELIVERY_CONFIRMATIONS = @{ Source = @('COURIER_STATEMENT', 'COURIER_PORTAL', 'CUSTOMER_CONFIRMATION', 'OTHER') }
     INVENTORY_ADJUSTMENTS = @{ Bucket = @('SELLABLE', 'DAMAGED'); Reason = @('COUNT', 'DAMAGE', 'WRITE_OFF', 'OTHER') }
-    DATA_ENTRY = @{ TransactionType = @('EXPENSE', 'PRODUCTION_PAYMENT', 'INVENTORY_PURCHASE', 'ASSET_PURCHASE', 'CAPITAL_DEPOSIT', 'OWNER_WITHDRAWAL', 'OTHER_INCOME', 'OTHER_EXPENSE', 'COD_REMITTANCE', 'COD_FEE', 'TRANSFER'); PaymentSource = @('COMPANY', 'PARTNER_PERSONAL'); PaymentAccount = @('1000', '1010', '1020', '1030'); Category = @((Get-PassressDefaultExpenseMap) | ForEach-Object { $_.Category }); PaymentMethod = @('Cash', 'InstaPay', 'Bank Transfer', 'Credit Card', 'Vodafone Cash') }
+    DATA_ENTRY = @{ TransactionType = @('EXPENSE', 'PRODUCTION_PAYMENT', 'INVENTORY_PURCHASE', 'ASSET_PURCHASE', 'CAPITAL_DEPOSIT', 'OWNER_WITHDRAWAL', 'OTHER_INCOME', 'OTHER_EXPENSE', 'COD_REMITTANCE', 'COD_FEE', 'TRANSFER'); PaymentSource = @('COMPANY', 'PARTNER_PERSONAL'); PaymentAccount = @('1000', '1010', '1020', '1030'); Category = @((Get-PassressDefaultExpenseMap) | ForEach-Object { $_.Category }); PaymentMethod = @('Cash', 'InstaPay', 'Bank Transfer', 'Credit Card', 'Vodafone Cash'); ReviewStatus = @('PENDING_REVIEW', 'APPROVED') }
     CHART_OF_ACCOUNTS = @{ AccountType = @('ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'CONTRA_REVENUE', 'COGS', 'EXPENSE', 'OTHER_INCOME', 'OTHER_EXPENSE') }
     MONTH_CLOSE = @{ Status = @('OPEN', 'CLOSED') }
     BUDGET_INPUT = @{ ValueType = @('BUDGET', 'FORECAST'); LineItem = @('Net Revenue', 'COGS', 'Gross Profit', 'Marketing', 'Operating Expenses', 'Net Profit', 'Closing Cash') }
@@ -101,7 +102,8 @@ try {
                     TransactionID = ('LEG-{0:0000}' -f $n); TransactionDate = $(if ($row[0] -is [double]) { [DateTime]::FromOADate($row[0]) } else { $null })
                     TransactionType = $newType; Category = $row[2]; Subcategory = $row[3]; ProductType = $row[4]; ProductSKU = $row[5]; Description = $row[6]
                     Amount = $row[8]; PaymentSource = $null; PaymentAccount = $null; PaymentMethod = $row[7]; PaidBy = $row[9]
-                    Notes = ('Migrated from Passress(3).xlsx DATA ENTRY row {0}. Complete PaymentSource (COMPANY / PARTNER_PERSONAL) and, for company money, PaymentAccount - nothing is posted until then. {1}' -f ($r + 1), $row[10]).Trim()
+                    Notes = ('Migrated from Passress(3).xlsx DATA ENTRY row {0}. TransactionType is a PROVISIONAL suggestion. Confirm it, complete PaymentSource (COMPANY / PARTNER_PERSONAL) and PaymentAccount, then set ReviewStatus = APPROVED - nothing is posted before that. {1}' -f ($r + 1), $row[10]).Trim()
+                    ReviewStatus = 'PENDING_REVIEW'; ReviewedBy = $null
                     LegacyType = $ltype; LegacyCategory = $row[2]
                 }
             }
@@ -226,7 +228,8 @@ try {
                     @('Cost ERROR exceptions', '=COUNTIFS(COST_EXCEPTIONS[Severity],"ERROR")', '=IF(B5=0,"OK","REVIEW")'),
                     @('Inventory ERROR exceptions', '=COUNTIFS(INVENTORY_EXCEPTIONS[Severity],"ERROR")', '=IF(B6=0,"OK","REVIEW")'),
                     @('SKUs with negative stock', '=COUNTIFS(INVENTORY[StockStatus],"NEGATIVE")', '=IF(B7=0,"OK","FAIL")'),
-                    @('Lines missing cost', '=COUNTIFS(SALES_COSTED[CostStatus],"MISSING_COST")+COUNTIFS(SALES_COSTED[CostStatus],"MISSING_SKU")', '=IF(B8=0,"OK","INCOMPLETE")')) }
+                    @('Lines missing cost', '=COUNTIFS(SALES_COSTED[CostStatus],"MISSING_COST")+COUNTIFS(SALES_COSTED[CostStatus],"MISSING_SKU")', '=IF(B8=0,"OK","INCOMPLETE")'),
+                    @('Lines with COGS pending recognition (trigger not met)', '=COUNTIFS(SALES_COSTED[RecognitionStatus],"PENDING")+COUNTIFS(SALES_COSTED[RecognitionStatus],"PARTIAL")', '=IF(B9=0,"OK","PENDING")')) }
                 '03_FINANCE' { $ctlRows = @(
                     @('Journal debits - credits', '=ROUND(SUM(JOURNAL_ENTRIES[Debit])-SUM(JOURNAL_ENTRIES[Credit]),2)', '=IF(B5=0,"OK","FAIL")'),
                     @('Balance sheet checks (sum of monthly A-(L+E))', '=ROUND(SUMIFS(BALANCE_SHEET[Amount],BALANCE_SHEET[Section],"CHECK"),2)', '=IF(B6=0,"OK","FAIL")'),
@@ -235,7 +238,9 @@ try {
                     @('P&L COGS - journal COGS accounts', '=ROUND(-SUMIFS(PROFIT_AND_LOSS[Amount],PROFIT_AND_LOSS[Section],"COGS")-(SUMIFS(JOURNAL_ENTRIES[Debit],JOURNAL_ENTRIES[AccountCode],"5*")-SUMIFS(JOURNAL_ENTRIES[Credit],JOURNAL_ENTRIES[AccountCode],"5*")),2)', '=IF(B9=0,"OK","FAIL")'),
                     @('Test orders in journal', '=COUNTIFS(FINANCE_EXCEPTIONS[CheckName],"TEST_ORDER_IN_FINANCE")', '=IF(B10=0,"OK","FAIL")'),
                     @('Open ERROR exceptions', '=COUNTIFS(FINANCE_EXCEPTIONS[Severity],"ERROR")', '=IF(B11=0,"OK","REVIEW")'),
-                    @('Months marked INCOMPLETE', '=COUNTIFS(PROFIT_AND_LOSS[Status],"INCOMPLETE",PROFIT_AND_LOSS[LineItem],"Net Profit")', '=IF(B12=0,"OK","INCOMPLETE")')) }
+                    @('Months marked INCOMPLETE', '=COUNTIFS(PROFIT_AND_LOSS[Status],"INCOMPLETE",PROFIT_AND_LOSS[LineItem],"Net Profit")', '=IF(B12=0,"OK","INCOMPLETE")'),
+                    @('Partner capital: sub-ledger vs GL mismatches', '=COUNTIFS(PARTNER_CAPITAL_RECONCILIATION[Status],"MISMATCH")', '=IF(B13=0,"OK","FAIL")'),
+                    @('Legacy / pending-review rows not posted', '=COUNTIFS(FINANCE_EXCEPTIONS[CheckName],"LEGACY_ROW_PENDING_REVIEW")+COUNTIFS(FINANCE_EXCEPTIONS[CheckName],"ROW_PENDING_REVIEW")', '=IF(B14=0,"OK","REVIEW")')) }
                 '04_MANAGEMENT' { $ctlRows = @(
                     @('Test orders in management data', '=COUNTIFS(MANAGEMENT_EXCEPTIONS[CheckName],"TEST_ORDER_IN_MANAGEMENT")', '=IF(B5=0,"OK","FAIL")'),
                     @('Reconciliation failures vs Finance', '=COUNTIFS(MANAGEMENT_EXCEPTIONS[CheckName],"KPI_REVENUE_VS_FINANCE")+COUNTIFS(MANAGEMENT_EXCEPTIONS[CheckName],"DASHBOARD_PROFIT_VS_FINANCE")', '=IF(B6=0,"OK","FAIL")'),

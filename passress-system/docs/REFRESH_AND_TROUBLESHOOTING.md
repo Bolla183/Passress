@@ -20,6 +20,8 @@
 ## Daily / weekly use
 1. Enter what Shopify cannot know - in the INPUT sheets only:
    * 02: costs (new row per cost change), production receipts, purchases, physical returns + inspections, stock adjustments, opening stock.
+   * 02: **DELIVERY_CONFIRMATIONS** from courier statements for orders Shopify does not show as delivered - COGS is only recognised on confirmed delivery (config `CogsRecognitionTrigger`).
+   * 03: migrated legacy rows - review each, set PaymentSource / PaymentAccount, then `ReviewStatus = APPROVED`.
    * 03: expenses, production payments, partner deposits / partner-paid costs (choose PaymentSource!), COD remittances and fees, opening balances.
    * 04: marketing spend, budget/forecast.
 2. Save and **close all four workbooks**.
