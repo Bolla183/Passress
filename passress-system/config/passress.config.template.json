@@ -1,0 +1,21 @@
+{
+  "_README": "Copy to <RootFolder>\\07_CONFIGURATION\\passress.config.json and edit. NO credentials here: the Shopify client id/secret are stored encrypted by scripts\\Set-PassressShopifyCredential.ps1.",
+  "RootFolder": "C:\\PASSRESS_BUSINESS_SYSTEM",
+  "ShopDomain": "szv1fc-a1.myshopify.com",
+  "ApiVersion": "2026-07",
+  "Currency": "EGP",
+  "TimeZoneWindows": "Egypt Standard Time",
+  "TimeZoneIana": "Africa/Cairo",
+  "FinancialYearStartMonth": 1,
+  "HistoryStartDate": "",
+  "TestOrderTag": "TEST",
+  "OrdersPageSize": 10,
+  "RefundsFirstPage": 20,
+  "TransactionsFirstPage": 50,
+  "MaxRefundsPerOrder": 250,
+  "MaxTransactionsPerOrder": 250,
+  "ApiMaxRetries": 6,
+  "ApiMaxPages": 2000,
+  "RefreshTimeoutMinutes": 30,
+  "ExpectedOriginalSha256": "9944f49026c9e54076ade78fbf3412ce6b0152c95b3b9d810322f4713da43000"
+}

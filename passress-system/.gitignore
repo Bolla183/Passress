@@ -1,0 +1,11 @@
+# Never commit business data, credentials, logs or test evidence containing data
+PASSRESS_BUSINESS_SYSTEM/
+*.xlsx
+*.xlsm
+*.xls
+*credential*.xml
+*.secret
+passress.config.json
+tests/results/
+08_LOGS/
+05_BACKUPS/

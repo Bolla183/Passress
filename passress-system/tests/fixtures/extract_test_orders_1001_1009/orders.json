@@ -1,0 +1,1641 @@
+[
+ {
+  "id": "gid://shopify/Order/12203059675500",
+  "name": "#1001",
+  "createdAt": "2026-06-22T21:26:23Z",
+  "processedAt": "2026-06-22T21:26:23Z",
+  "updatedAt": "2026-06-22T21:26:23Z",
+  "cancelledAt": "2026-06-22T21:54:02Z",
+  "cancelReason": "CUSTOMER",
+  "test": false,
+  "displayFinancialStatus": "VOIDED",
+  "displayFulfillmentStatus": "FULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "3299.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "3299.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1001-1",
+     "sku": null,
+     "name": "passBlazer",
+     "title": "passBlazer",
+     "variantTitle": null,
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3299.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1001-1",
+    "createdAt": "2026-06-22T21:54:00Z",
+    "processedAt": "2026-06-22T21:54:00Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "0.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1001-1",
+       "quantity": 1,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "3299.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1001-1",
+        "sku": null
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": []
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18928905683308",
+  "name": "#1002",
+  "createdAt": "2026-10-06T17:03:21Z",
+  "processedAt": "2026-10-06T17:03:21Z",
+  "updatedAt": "2026-10-06T17:03:21Z",
+  "cancelledAt": "2026-10-11T12:08:08Z",
+  "cancelReason": "CUSTOMER",
+  "test": false,
+  "displayFinancialStatus": "VOIDED",
+  "displayFulfillmentStatus": "UNFULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1002-1",
+     "sku": "PRS-OB-BRN-BLZ-M",
+     "name": "OFFBEAT BROWN BLAZER - Dark brown / M",
+     "title": "OFFBEAT BROWN BLAZER",
+     "variantTitle": "Dark brown / M",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3599.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1002-1",
+    "createdAt": "2026-10-11T12:08:07Z",
+    "processedAt": "2026-10-11T12:08:07Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "0.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1002-1",
+       "quantity": 1,
+       "restockType": "CANCEL",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "3599.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1002-1",
+        "sku": "PRS-OB-BRN-BLZ-M"
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": []
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18928925802860",
+  "name": "#1003",
+  "createdAt": "2026-10-06T17:14:25Z",
+  "processedAt": "2026-10-06T17:14:25Z",
+  "updatedAt": "2026-10-06T17:14:25Z",
+  "cancelledAt": "2026-10-14T20:50:03Z",
+  "cancelReason": "CUSTOMER",
+  "test": false,
+  "displayFinancialStatus": "VOIDED",
+  "displayFulfillmentStatus": "FULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1003-1",
+     "sku": "PRS-HID-BRN-LPS-15",
+     "name": "HIDEOUT LAPTOP SLEEVE - 15-INCH",
+     "title": "HIDEOUT LAPTOP SLEEVE",
+     "variantTitle": "15-INCH",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "2250.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    },
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1003-2",
+     "sku": "PRS-NPL-OLV-BLZ-L",
+     "name": "NAPOLEON BLAZER - Olive / L",
+     "title": "NAPOLEON BLAZER",
+     "variantTitle": "Olive / L",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "2199.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1003-1",
+    "createdAt": "2026-10-14T20:50:02Z",
+    "processedAt": "2026-10-14T20:50:02Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "0.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1003-1",
+       "quantity": 1,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "2250.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1003-1",
+        "sku": "PRS-HID-BRN-LPS-15"
+       }
+      },
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1003-2",
+       "quantity": 1,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "2199.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1003-2",
+        "sku": "PRS-NPL-OLV-BLZ-L"
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": []
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18947365962092",
+  "name": "#1004",
+  "createdAt": "2026-10-14T20:40:45Z",
+  "processedAt": "2026-10-14T20:40:45Z",
+  "updatedAt": "2026-10-14T20:40:45Z",
+  "cancelledAt": null,
+  "cancelReason": null,
+  "test": false,
+  "displayFinancialStatus": "REFUNDED",
+  "displayFulfillmentStatus": "FULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1004-1",
+     "sku": "PRS-OB-BRN-BLZ-M",
+     "name": "OFFBEAT BROWN BLAZER - Dark brown / M",
+     "title": "OFFBEAT BROWN BLAZER",
+     "variantTitle": "Dark brown / M",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3599.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [
+   {
+    "id": "gid://shopify/OrderTransaction/FIXTURE-1004-S",
+    "kind": "SALE",
+    "status": "SUCCESS",
+    "gateway": "Cash on Delivery (COD)",
+    "processedAt": "2026-10-14T20:41:00Z",
+    "amountSet": {
+     "shopMoney": {
+      "amount": "3599.0"
+     }
+    }
+   }
+  ],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1004-1",
+    "createdAt": "2026-10-14T20:44:26Z",
+    "processedAt": "2026-10-14T20:44:26Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "3599.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1004-1",
+       "quantity": 1,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "3599.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1004-1",
+        "sku": "PRS-OB-BRN-BLZ-M"
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": [
+      {
+       "id": "gid://shopify/OrderTransaction/FIXTURE-1004-R1",
+       "kind": "REFUND",
+       "status": "SUCCESS",
+       "gateway": "Cash on Delivery (COD)",
+       "processedAt": "2026-10-14T20:44:26Z",
+       "amountSet": {
+        "shopMoney": {
+         "amount": "3599.0"
+        }
+       }
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18953305129324",
+  "name": "#1005",
+  "createdAt": "2026-10-17T16:53:36Z",
+  "processedAt": "2026-10-17T16:53:36Z",
+  "updatedAt": "2026-10-17T16:53:36Z",
+  "cancelledAt": null,
+  "cancelReason": null,
+  "test": false,
+  "displayFinancialStatus": "REFUNDED",
+  "displayFulfillmentStatus": "FULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "20696.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "20696.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "20696.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "20696.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1005-1",
+     "sku": null,
+     "name": "Stone Cropped Blazer - Stone / L",
+     "title": "Stone Cropped Blazer",
+     "variantTitle": "Stone / L",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3150.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    },
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1005-2",
+     "sku": "PRS-OB-BRN-BLZ-M",
+     "name": "OFFBEAT BROWN BLAZER - Dark brown / M",
+     "title": "OFFBEAT BROWN BLAZER",
+     "variantTitle": "Dark brown / M",
+     "quantity": 2,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3599.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    },
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1005-3",
+     "sku": "PRS-OB-BRN-BLZ-L",
+     "name": "OFFBEAT BROWN BLAZER - Dark brown / L",
+     "title": "OFFBEAT BROWN BLAZER",
+     "variantTitle": "Dark brown / L",
+     "quantity": 2,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3599.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    },
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1005-4",
+     "sku": null,
+     "name": "Stone Cropped Blazer - Stone / M",
+     "title": "Stone Cropped Blazer",
+     "variantTitle": "Stone / M",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3150.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [
+   {
+    "id": "gid://shopify/OrderTransaction/FIXTURE-1005-S",
+    "kind": "SALE",
+    "status": "SUCCESS",
+    "gateway": "Cash on Delivery (COD)",
+    "processedAt": "2026-10-17T16:54:00Z",
+    "amountSet": {
+     "shopMoney": {
+      "amount": "20696.0"
+     }
+    }
+   }
+  ],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1005-1",
+    "createdAt": "2026-10-17T17:02:45Z",
+    "processedAt": "2026-10-17T17:02:45Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "3150.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1005-1",
+       "quantity": 1,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "3150.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1005-1",
+        "sku": null
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": [
+      {
+       "id": "gid://shopify/OrderTransaction/FIXTURE-1005-R1",
+       "kind": "REFUND",
+       "status": "SUCCESS",
+       "gateway": "Cash on Delivery (COD)",
+       "processedAt": "2026-10-17T17:02:45Z",
+       "amountSet": {
+        "shopMoney": {
+         "amount": "3150.0"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1005-2",
+    "createdAt": "2026-10-17T17:08:16Z",
+    "processedAt": "2026-10-17T17:08:16Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "17546.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1005-2",
+       "quantity": 2,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "7198.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1005-2",
+        "sku": "PRS-OB-BRN-BLZ-M"
+       }
+      },
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1005-3",
+       "quantity": 2,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "7198.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1005-3",
+        "sku": "PRS-OB-BRN-BLZ-L"
+       }
+      },
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1005-4",
+       "quantity": 1,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "3150.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1005-4",
+        "sku": null
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": [
+      {
+       "id": "gid://shopify/OrderTransaction/FIXTURE-1005-R2",
+       "kind": "REFUND",
+       "status": "SUCCESS",
+       "gateway": "Cash on Delivery (COD)",
+       "processedAt": "2026-10-17T17:08:16Z",
+       "amountSet": {
+        "shopMoney": {
+         "amount": "17546.0"
+        }
+       }
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18953478603116",
+  "name": "#1006",
+  "createdAt": "2026-10-17T18:25:12Z",
+  "processedAt": "2026-10-17T18:25:12Z",
+  "updatedAt": "2026-10-17T18:25:12Z",
+  "cancelledAt": "2026-10-17T22:58:44Z",
+  "cancelReason": "CUSTOMER",
+  "test": false,
+  "displayFinancialStatus": "VOIDED",
+  "displayFulfillmentStatus": "UNFULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1006-1",
+     "sku": "PRS-NPL-OLV-BLZ-L",
+     "name": "NAPOLEON BLAZER - Olive / L",
+     "title": "NAPOLEON BLAZER",
+     "variantTitle": "Olive / L",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "2199.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    },
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1006-2",
+     "sku": "PRS-HID-BRN-LPS-15",
+     "name": "HIDEOUT LAPTOP SLEEVE - 15-INCH",
+     "title": "HIDEOUT LAPTOP SLEEVE",
+     "variantTitle": "15-INCH",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "2250.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1006-1",
+    "createdAt": "2026-10-17T22:58:44Z",
+    "processedAt": "2026-10-17T22:58:44Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "0.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1006-1",
+       "quantity": 1,
+       "restockType": "CANCEL",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "2199.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1006-1",
+        "sku": "PRS-NPL-OLV-BLZ-L"
+       }
+      },
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1006-2",
+       "quantity": 1,
+       "restockType": "CANCEL",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "2250.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1006-2",
+        "sku": "PRS-HID-BRN-LPS-15"
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": []
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18968573641068",
+  "name": "#1007",
+  "createdAt": "2026-10-24T19:48:13Z",
+  "processedAt": "2026-10-24T19:48:13Z",
+  "updatedAt": "2026-10-24T19:48:13Z",
+  "cancelledAt": "2026-10-25T12:30:05Z",
+  "cancelReason": "CUSTOMER",
+  "test": false,
+  "displayFinancialStatus": "VOIDED",
+  "displayFulfillmentStatus": "UNFULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "3599.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1007-1",
+     "sku": "PRS-OB-BRN-BLZ-L",
+     "name": "OFFBEAT BROWN BLAZER - Dark brown / L",
+     "title": "OFFBEAT BROWN BLAZER",
+     "variantTitle": "Dark brown / L",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3599.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1007-1",
+    "createdAt": "2026-10-25T12:30:05Z",
+    "processedAt": "2026-10-25T12:30:05Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "0.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/FIXTURE-1007-1",
+       "quantity": 1,
+       "restockType": "CANCEL",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "3599.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/FIXTURE-1007-1",
+        "sku": "PRS-OB-BRN-BLZ-L"
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": []
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18971894907244",
+  "name": "#1008",
+  "createdAt": "2026-10-26T07:30:54Z",
+  "processedAt": "2026-10-26T07:30:54Z",
+  "updatedAt": "2026-10-26T07:30:54Z",
+  "cancelledAt": null,
+  "cancelReason": null,
+  "test": false,
+  "displayFinancialStatus": "REFUNDED",
+  "displayFulfillmentStatus": "PARTIALLY_FULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "4449.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/50857802596716",
+     "sku": "PRS-HID-BRN-LPS-15",
+     "name": "HIDEOUT LAPTOP SLEEVE - 15-INCH",
+     "title": "HIDEOUT LAPTOP SLEEVE",
+     "variantTitle": "15-INCH",
+     "quantity": 1,
+     "currentQuantity": 1,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "2250.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    },
+    {
+     "id": "gid://shopify/LineItem/50857802629484",
+     "sku": "PRS-NPL-OLV-BLZ-L",
+     "name": "NAPOLEON BLAZER - Olive / L",
+     "title": "NAPOLEON BLAZER",
+     "variantTitle": "Olive / L",
+     "quantity": 1,
+     "currentQuantity": 0,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "2199.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [
+   {
+    "id": "gid://shopify/OrderTransaction/FIXTURE-1008-S",
+    "kind": "SALE",
+    "status": "SUCCESS",
+    "gateway": "Cash on Delivery (COD)",
+    "processedAt": "2026-10-26T07:31:00Z",
+    "amountSet": {
+     "shopMoney": {
+      "amount": "4449.0"
+     }
+    }
+   }
+  ],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/1114412974444",
+    "createdAt": "2026-10-27T15:17:58Z",
+    "processedAt": "2026-10-27T15:17:58Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "2199.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": [
+      {
+       "id": "gid://shopify/RefundLineItem/762791461228",
+       "quantity": 1,
+       "restockType": "RETURN",
+       "restocked": true,
+       "location": {
+        "id": "gid://shopify/Location/FIXTURE",
+        "name": "Passress"
+       },
+       "subtotalSet": {
+        "shopMoney": {
+         "amount": "2199.0"
+        }
+       },
+       "totalTaxSet": {
+        "shopMoney": {
+         "amount": "0.0"
+        }
+       },
+       "lineItem": {
+        "id": "gid://shopify/LineItem/50857802629484",
+        "sku": "PRS-NPL-OLV-BLZ-L"
+       }
+      }
+     ]
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": [
+      {
+       "id": "gid://shopify/OrderTransaction/FIXTURE-1008-R1",
+       "kind": "REFUND",
+       "status": "SUCCESS",
+       "gateway": "Cash on Delivery (COD)",
+       "processedAt": "2026-10-27T15:17:58Z",
+       "amountSet": {
+        "shopMoney": {
+         "amount": "2199.0"
+        }
+       }
+      }
+     ]
+    }
+   },
+   {
+    "id": "gid://shopify/Refund/1115061617004",
+    "createdAt": "2026-10-30T18:07:57Z",
+    "processedAt": "2026-10-30T18:07:57Z",
+    "note": "",
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "2250.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": []
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": [
+      {
+       "id": "gid://shopify/OrderTransaction/FIXTURE-1008-R2",
+       "kind": "REFUND",
+       "status": "SUCCESS",
+       "gateway": "Cash on Delivery (COD)",
+       "processedAt": "2026-10-30T18:07:57Z",
+       "amountSet": {
+        "shopMoney": {
+         "amount": "2250.0"
+        }
+       }
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "id": "gid://shopify/Order/18981663048044",
+  "name": "#1009",
+  "createdAt": "2026-10-30T13:42:51Z",
+  "processedAt": "2026-10-30T13:42:51Z",
+  "updatedAt": "2026-10-30T13:42:51Z",
+  "cancelledAt": "2026-10-30T18:26:39Z",
+  "cancelReason": "CUSTOMER",
+  "test": false,
+  "displayFinancialStatus": "REFUNDED",
+  "displayFulfillmentStatus": "FULFILLED",
+  "currencyCode": "EGP",
+  "tags": [],
+  "sourceName": "web",
+  "customer": {
+   "id": "gid://shopify/Customer/FIXTURE"
+  },
+  "subtotalPriceSet": {
+   "shopMoney": {
+    "amount": "3150.0"
+   }
+  },
+  "totalDiscountsSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalShippingPriceSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalTaxSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "totalPriceSet": {
+   "shopMoney": {
+    "amount": "3150.0"
+   }
+  },
+  "totalReceivedSet": {
+   "shopMoney": {
+    "amount": "3150.0"
+   }
+  },
+  "totalRefundedSet": {
+   "shopMoney": {
+    "amount": "3150.0"
+   }
+  },
+  "netPaymentSet": {
+   "shopMoney": {
+    "amount": "0.0"
+   }
+  },
+  "lineItems": {
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": null
+   },
+   "nodes": [
+    {
+     "id": "gid://shopify/LineItem/FIXTURE-1009-1",
+     "sku": null,
+     "name": "Stone Cropped Blazer - Stone / M",
+     "title": "Stone Cropped Blazer",
+     "variantTitle": "Stone / M",
+     "quantity": 1,
+     "currentQuantity": 1,
+     "product": null,
+     "variant": null,
+     "originalUnitPriceSet": {
+      "shopMoney": {
+       "amount": "3150.0"
+      }
+     },
+     "discountAllocations": [],
+     "taxLines": []
+    }
+   ]
+  },
+  "transactions": [
+   {
+    "id": "gid://shopify/OrderTransaction/FIXTURE-1009-S",
+    "kind": "SALE",
+    "status": "SUCCESS",
+    "gateway": "Cash on Delivery (COD)",
+    "processedAt": "2026-10-30T13:43:00Z",
+    "amountSet": {
+     "shopMoney": {
+      "amount": "3150.0"
+     }
+    }
+   }
+  ],
+  "refunds": [
+   {
+    "id": "gid://shopify/Refund/FIXTURE-1009-1",
+    "createdAt": "2026-10-30T14:59:48Z",
+    "processedAt": "2026-10-30T14:59:48Z",
+    "note": null,
+    "totalRefundedSet": {
+     "shopMoney": {
+      "amount": "3150.0"
+     }
+    },
+    "refundLineItems": {
+     "pageInfo": {
+      "hasNextPage": false,
+      "endCursor": null
+     },
+     "nodes": []
+    },
+    "refundShippingLines": {
+     "nodes": []
+    },
+    "orderAdjustments": {
+     "nodes": []
+    },
+    "transactions": {
+     "nodes": [
+      {
+       "id": "gid://shopify/OrderTransaction/FIXTURE-1009-R1",
+       "kind": "REFUND",
+       "status": "SUCCESS",
+       "gateway": "Cash on Delivery (COD)",
+       "processedAt": "2026-10-30T14:59:48Z",
+       "amountSet": {
+        "shopMoney": {
+         "amount": "3150.0"
+        }
+       }
+      }
+     ]
+    }
+   }
+  ]
+ }
+]
