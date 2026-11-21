@@ -19,7 +19,8 @@ They are standing instructions from the store owner and take precedence over def
 ## Theme safety
 
 - Work **only** on the designated **unpublished backup theme**.
-  - Designated theme ID: _not yet set. Ask the owner to confirm which unpublished theme to use before the first theme edit, then record its ID here._
+  - Designated theme: **Passress main layout backup**, ID `gid://shopify/OnlineStoreTheme/194859598188` (role `UNPUBLISHED`, verified 2026-11-21).
+  - The live theme is **Passress main layout** (`gid://shopify/OnlineStoreTheme/189593944428`, role `MAIN`). Never edit it.
   - Before every theme edit, confirm via `graphql_query` that the target theme's role is **not** `MAIN` (live). If it is live, or its role is unclear, stop and ask.
 - **Never modify the live (published) theme.**
 - **Never publish a theme** (`theme_publish`) or deploy anything without the owner's explicit approval, given in the current conversation for that specific change.
